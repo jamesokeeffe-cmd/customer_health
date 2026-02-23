@@ -1,0 +1,290 @@
+# Scoring thresholds by segment.
+#
+# Each metric has green/yellow/red thresholds per segment.
+# Normalisation: green boundary = 100, red boundary = 0, linear interpolation between.
+#
+# "lower_is_better: true" means lower raw values score higher (e.g. ticket volume, response time).
+# "lower_is_better: false" means higher raw values score higher (e.g. adoption %, QBR attendance).
+
+# ---------------------------------------------------------------------------
+# Health Score Tiers
+# ---------------------------------------------------------------------------
+tiers:
+  champion: { min: 90, max: 100 }
+  healthy:  { min: 76, max: 89 }
+  at_risk:  { min: 60, max: 75 }
+  critical: { min: 0,  max: 59 }
+
+# ---------------------------------------------------------------------------
+# Support Health
+# ---------------------------------------------------------------------------
+support_health:
+  p1_p2_volume:
+    lower_is_better: true
+    paid:
+      green: 2      # <=2/month = 100
+      yellow: 4     # 2-4 = 50-99
+      red: 8        # >=8 = 0
+    standard:
+      green: 1
+      yellow: 2
+      red: 5
+
+  first_response_minutes:
+    lower_is_better: true
+    paid:
+      green: 60     # <1hr SLA
+      yellow: 120   # 1-2hr
+      red: 240      # >4hr = 0
+    standard:
+      green: 240    # <4hr
+      yellow: 480   # 4-8hr
+      red: 1440     # >24hr = 0
+
+  close_time_hours:
+    lower_is_better: true
+    paid:
+      green: 4      # <4hr
+      yellow: 12    # 4-12hr
+      red: 48       # >48hr = 0
+    standard:
+      green: 24     # <24hr
+      yellow: 48    # 24-48hr
+      red: 168      # >7 days = 0
+
+  reopen_rate_pct:
+    lower_is_better: true
+    paid:
+      green: 5      # <5%
+      yellow: 10    # 5-10%
+      red: 20       # >20% = 0
+    standard:
+      green: 8
+      yellow: 15
+      red: 25
+
+  escalation_rate_pct:
+    lower_is_better: true
+    paid:
+      green: 5      # <5% escalated
+      yellow: 10
+      red: 20
+    standard:
+      green: 10     # Standard = Fin→human handoff rate
+      yellow: 20
+      red: 40
+
+# ---------------------------------------------------------------------------
+# Financial & Contract
+# ---------------------------------------------------------------------------
+financial_contract:
+  days_to_renewal:
+    lower_is_better: false   # more days = safer
+    paid:
+      green: 180    # >180 days out = 100
+      yellow: 90    # 90-180 days
+      red: 30       # <30 days = 0
+    standard:
+      green: 180
+      yellow: 90
+      red: 30
+
+  payment_health:
+    # Scored as a composite: 0 = no issues, higher = worse
+    # Value represents count of payment failures in last 12 months
+    lower_is_better: true
+    paid:
+      green: 0
+      yellow: 1
+      red: 3
+    standard:
+      green: 0
+      yellow: 1
+      red: 3
+
+  contract_changes:
+    # Scored as negative signals: 0 = no changes, higher = more removals/downgrades
+    lower_is_better: true
+    paid:
+      green: 0
+      yellow: 1
+      red: 2
+    standard:
+      green: 0
+      yellow: 1
+      red: 2
+
+  arr_trajectory_pct:
+    # YoY ARR change as percentage. Positive = growth
+    lower_is_better: false
+    paid:
+      green: 5      # >5% growth = 100
+      yellow: 0     # flat
+      red: -10      # >10% decline = 0
+    standard:
+      green: 3
+      yellow: 0
+      red: -10
+
+  tier_alignment:
+    # Boolean-like: 0 = aligned, 1 = misaligned (e.g. >$200k on Standard)
+    lower_is_better: true
+    paid:
+      green: 0
+      yellow: 0
+      red: 1
+    standard:
+      green: 0
+      yellow: 0
+      red: 1
+
+# ---------------------------------------------------------------------------
+# Adoption & Engagement
+# ---------------------------------------------------------------------------
+adoption_engagement:
+  staff_login_trend:
+    # Percentage change in staff logins (30d vs prior 30d). Positive = growing
+    lower_is_better: false
+    paid:
+      green: 5      # >5% growth
+      yellow: -10   # -10% to +5%
+      red: -30      # >30% decline = 0
+    standard:
+      green: 0
+      yellow: -15
+      red: -30
+
+  admin_login_trend:
+    lower_is_better: false
+    paid:
+      green: 0      # stable or growing
+      yellow: -15
+      red: -40
+    standard:
+      green: 0
+      yellow: -15
+      red: -40
+
+  feature_breadth_pct:
+    # Percentage of available modules with activity in 30d
+    lower_is_better: false
+    paid:
+      green: 60     # >60% modules active
+      yellow: 40
+      red: 20       # <20% = 0
+    standard:
+      green: 50
+      yellow: 30
+      red: 15
+
+  platform_score:
+    # AXP Platform Score (0-100 already)
+    lower_is_better: false
+    paid:
+      green: 75
+      yellow: 50
+      red: 25
+    standard:
+      green: 65
+      yellow: 40
+      red: 20
+
+  platform_score_trend:
+    # Change in AXP Platform Score over 90 days
+    lower_is_better: false
+    paid:
+      green: 5
+      yellow: -5
+      red: -15
+    standard:
+      green: 3
+      yellow: -5
+      red: -15
+
+# ---------------------------------------------------------------------------
+# Relationship & Expansion (Phase 2 — CSM input)
+# ---------------------------------------------------------------------------
+relationship_expansion:
+  qbr_attendance_pct:
+    # Percentage of scheduled QBRs attended (last 12 months)
+    lower_is_better: false
+    paid:
+      green: 80
+      yellow: 50
+      red: 25
+    standard:
+      green: 50     # Standard has fewer touchpoints
+      yellow: 25
+      red: 0
+
+  responsiveness:
+    # Average response time category: 1 = <24hr, 2 = 24-48hr, 3 = >48hr
+    lower_is_better: true
+    paid:
+      green: 1
+      yellow: 2
+      red: 3
+    standard:
+      green: 1.5
+      yellow: 2.5
+      red: 3
+
+  champion_stability:
+    # Days since last champion change. Higher = more stable
+    lower_is_better: false
+    paid:
+      green: 180    # >6 months stable
+      yellow: 90    # 3-6 months
+      red: 30       # changed in last month = 0
+    standard:
+      green: 180
+      yellow: 90
+      red: 30
+
+  exec_engagement:
+    # Days since last exec interaction. Lower = more engaged
+    lower_is_better: true
+    paid:
+      green: 30     # within last month
+      yellow: 90    # within last quarter
+      red: 180      # >6 months = 0
+    standard:
+      green: 90
+      yellow: 180
+      red: 365
+
+  expansion_signals:
+    # Count of open CSQLs + expansion mentions
+    lower_is_better: false
+    paid:
+      green: 2
+      yellow: 1
+      red: 0
+    standard:
+      green: 1
+      yellow: 0
+      red: 0
+
+# ---------------------------------------------------------------------------
+# Qualitative Signal Modifier (caps, not dimension scores)
+# ---------------------------------------------------------------------------
+qualitative_modifier:
+  # Applied as MIN(quantitative_score, cap)
+  # Evaluated in order — first match wins (most severe first)
+  rules:
+    - condition: "critical_confirmed"
+      description: "1+ Critical signal with Confirmed confidence"
+      action: "set"
+      value: 50
+    - condition: "critical_2plus"
+      description: "2+ Critical signals (any confidence)"
+      action: "cap"
+      value: 55
+    - condition: "critical_1"
+      description: "1+ Critical signal (any confidence)"
+      action: "cap"
+      value: 65
+    - condition: "moderate_1plus"
+      description: "1+ Moderate signal (any confidence)"
+      action: "cap"
+      value: 75

@@ -1,0 +1,48 @@
+# Health Score = (churn_risk_weight × Churn Risk) + (platform_value_weight × Platform Value Score)
+health_score:
+  churn_risk_weight: 0.60
+  platform_value_weight: 0.40
+
+# Churn Risk Score = weighted sum of four dimensions
+churn_risk:
+  support_health: 0.30
+  financial_contract: 0.30
+  adoption_engagement: 0.25
+  relationship_expansion: 0.15
+
+# Metric weights within each dimension (must sum to 1.0 within each dimension)
+support_health:
+  p1_p2_volume: 0.25
+  first_response_minutes: 0.20
+  close_time_hours: 0.20
+  reopen_rate_pct: 0.20
+  escalation_rate_pct: 0.15
+
+financial_contract:
+  days_to_renewal: 0.20
+  payment_health: 0.25
+  contract_changes: 0.20
+  arr_trajectory_pct: 0.20
+  tier_alignment: 0.15
+
+adoption_engagement:
+  staff_login_trend: 0.20
+  admin_login_trend: 0.15
+  feature_breadth_pct: 0.25
+  platform_score: 0.25
+  platform_score_trend: 0.15
+
+relationship_expansion:
+  qbr_attendance_pct: 0.20
+  responsiveness: 0.20
+  champion_stability: 0.25
+  exec_engagement: 0.15
+  expansion_signals: 0.20
+
+# Platform Value Score sub-pillars (existing AXP calculation)
+platform_value:
+  messaging: 0.50
+  automations: 0.20
+  contactless: 0.20
+  requests: 0.05
+  staff_adoption: 0.05

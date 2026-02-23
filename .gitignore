@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.env
+*.csv
+!config/account_mapping.csv
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+output/
