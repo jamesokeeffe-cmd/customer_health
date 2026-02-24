@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Dimension-level scoring: normalise each metric then compute weighted dimension score.
 
 Handles missing metrics by redistributing weights proportionally across available metrics.

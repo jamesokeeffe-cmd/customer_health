@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Health Score Middleware Orchestrator.
 
 Extract → Score → Load pipeline:
@@ -21,6 +23,7 @@ from pathlib import Path
 import yaml
 
 from src.extractors.intercom import IntercomExtractor
+from src.extractors.jira import JiraExtractor
 from src.extractors.looker import LookerExtractor
 from src.extractors.salesforce import SalesforceExtractor
 from src.loaders.salesforce import SalesforceLoader, write_dry_run_csv
@@ -68,6 +71,7 @@ class HealthScoreOrchestrator:
 
         # Extractors and loader are initialised lazily via init_clients()
         self.intercom: IntercomExtractor | None = None
+        self.jira: JiraExtractor | None = None
         self.looker: LookerExtractor | None = None
         self.sf_extractor: SalesforceExtractor | None = None
         self.sf_loader: SalesforceLoader | None = None
@@ -104,6 +108,70 @@ class HealthScoreOrchestrator:
                 domain=sf_domain,
             )
 
+    def init_clients_from_env(self):
+        """Initialise API clients from environment variables.
+
+        Only initialises extractors whose credentials are fully present.
+        Logs which extractors are available at startup.
+        """
+        available = []
+
+        # Intercom
+        intercom_token = os.environ.get("INTERCOM_API_TOKEN")
+        if intercom_token:
+            self.intercom = IntercomExtractor(api_token=intercom_token)
+            available.append("Intercom")
+
+        # Jira
+        jira_base_url = os.environ.get("JIRA_BASE_URL")
+        jira_email = os.environ.get("JIRA_EMAIL")
+        jira_api_token = os.environ.get("JIRA_API_TOKEN")
+        if jira_base_url and jira_email and jira_api_token:
+            self.jira = JiraExtractor(
+                base_url=jira_base_url,
+                email=jira_email,
+                api_token=jira_api_token,
+            )
+            available.append("Jira")
+
+        # Looker
+        looker_base_url = os.environ.get("LOOKER_BASE_URL")
+        looker_client_id = os.environ.get("LOOKER_CLIENT_ID")
+        looker_client_secret = os.environ.get("LOOKER_CLIENT_SECRET")
+        if looker_base_url and looker_client_id and looker_client_secret:
+            self.looker = LookerExtractor.from_credentials(
+                base_url=looker_base_url,
+                client_id=looker_client_id,
+                client_secret=looker_client_secret,
+            )
+            available.append("Looker")
+
+        # Salesforce
+        sf_username = os.environ.get("SF_USERNAME")
+        sf_password = os.environ.get("SF_PASSWORD")
+        sf_token = os.environ.get("SF_SECURITY_TOKEN")
+        sf_domain = os.environ.get("SF_DOMAIN", "login")
+        if sf_username and sf_password and sf_token:
+            self.sf_extractor = SalesforceExtractor(
+                username=sf_username,
+                password=sf_password,
+                security_token=sf_token,
+                domain=sf_domain,
+            )
+            if not self.dry_run:
+                self.sf_loader = SalesforceLoader(
+                    username=sf_username,
+                    password=sf_password,
+                    security_token=sf_token,
+                    domain=sf_domain,
+                )
+            available.append("Salesforce")
+
+        if available:
+            logger.info("Extractors available: %s", ", ".join(available))
+        else:
+            logger.warning("No extractors configured — check environment variables")
+
     def score_account(self, account: dict) -> dict:
         """Run the full scoring pipeline for a single account.
 
@@ -130,6 +198,19 @@ class HealthScoreOrchestrator:
                 support_raw = self.intercom.extract_support_metrics(intercom_id)
             except Exception:
                 logger.exception("Intercom extraction failed for %s", account_name)
+
+        # Support Health — Jira bug metrics (merged into support_raw)
+        jira_project_key = account.get("jira_project_key", "")
+        jira_component = account.get("jira_component", "")
+        if self.jira and jira_project_key and jira_component:
+            try:
+                jira_metrics = self.jira.extract_bug_metrics(
+                    project_key=jira_project_key,
+                    component_name=jira_component,
+                )
+                support_raw.update(jira_metrics)
+            except Exception:
+                logger.exception("Jira extraction failed for %s", account_name)
 
         # Adoption & Engagement + Platform Value (Looker)
         adoption_raw = {}
@@ -375,44 +456,50 @@ class HealthScoreOrchestrator:
         return summary
 
 
+# --- Rollbar helper ---
+
+def _init_rollbar(environment: str):
+    """Initialise Rollbar error reporting. Gracefully disabled if token not set."""
+    token = os.environ.get("ROLLBAR_ACCESS_TOKEN")
+    if not token:
+        logger.info("Rollbar disabled (ROLLBAR_ACCESS_TOKEN not set)")
+        return
+    try:
+        import rollbar
+        rollbar.init(access_token=token, environment=environment)
+        logger.info("Rollbar initialised for environment: %s", environment)
+    except ImportError:
+        logger.warning("rollbar package not installed — error reporting disabled")
+
+
 # --- AWS Lambda handler ---
 
 def lambda_handler(event, context):
     """AWS Lambda entry point. Triggered by EventBridge monthly schedule."""
-    import boto3
-
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
 
-    # Load credentials from Secrets Manager
-    sm = boto3.client("secretsmanager")
-
-    def get_secret(name: str) -> dict:
-        value = sm.get_secret_value(SecretId=name)
-        return json.loads(value["SecretString"])
-
-    intercom_creds = get_secret("health-score/intercom")
-    looker_creds = get_secret("health-score/looker")
-    sf_creds = get_secret("health-score/salesforce")
+    environment = os.environ.get("ENVIRONMENT", "production")
+    _init_rollbar(environment)
 
     dry_run = event.get("dry_run", False)
     scoring_period = event.get("scoring_period")
 
     orchestrator = HealthScoreOrchestrator(dry_run=dry_run)
-    orchestrator.init_clients(
-        intercom_token=intercom_creds["api_token"],
-        looker_base_url=looker_creds["base_url"],
-        looker_client_id=looker_creds["client_id"],
-        looker_client_secret=looker_creds["client_secret"],
-        sf_username=sf_creds["username"],
-        sf_password=sf_creds["password"],
-        sf_token=sf_creds["security_token"],
-        sf_domain=sf_creds.get("domain", "login"),
-    )
+    orchestrator.init_clients_from_env()
 
-    summary = orchestrator.run(scoring_period=scoring_period)
+    try:
+        summary = orchestrator.run(scoring_period=scoring_period)
+    except Exception:
+        logger.exception("Lambda execution failed")
+        try:
+            import rollbar
+            rollbar.report_exc_info()
+        except (ImportError, Exception):
+            pass
+        raise
 
     if summary["failed"] > 0:
         logger.error("Run completed with %d failures", summary["failed"])
@@ -426,11 +513,21 @@ def main():
     """CLI entry point for local development and dry-run testing."""
     import argparse
 
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        print("Loaded .env file")
+    except ImportError:
+        pass
+
     parser = argparse.ArgumentParser(description="Health Score Middleware")
     parser.add_argument("--dry-run", action="store_true", help="Output to CSV instead of Salesforce")
     parser.add_argument("--config-dir", default="config", help="Path to config directory")
     parser.add_argument("--period", help="Scoring period (YYYY-MM). Defaults to current month.")
     args = parser.parse_args()
+
+    # Ensure output directory exists for log file
+    os.makedirs("output", exist_ok=True)
 
     logging.basicConfig(
         level=logging.INFO,
@@ -441,22 +538,14 @@ def main():
         ],
     )
 
+    environment = os.environ.get("ENVIRONMENT", "dev")
+    _init_rollbar(environment)
+
     orchestrator = HealthScoreOrchestrator(
         config_dir=args.config_dir,
         dry_run=args.dry_run,
     )
-
-    # Load credentials from environment variables
-    orchestrator.init_clients(
-        intercom_token=os.environ["INTERCOM_API_TOKEN"],
-        looker_base_url=os.environ["LOOKER_BASE_URL"],
-        looker_client_id=os.environ["LOOKER_CLIENT_ID"],
-        looker_client_secret=os.environ["LOOKER_CLIENT_SECRET"],
-        sf_username=os.environ["SF_USERNAME"],
-        sf_password=os.environ["SF_PASSWORD"],
-        sf_token=os.environ["SF_SECURITY_TOKEN"],
-        sf_domain=os.environ.get("SF_DOMAIN", "login"),
-    )
+    orchestrator.init_clients_from_env()
 
     summary = orchestrator.run(scoring_period=args.period)
     print(json.dumps(summary, indent=2))

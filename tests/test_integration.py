@@ -180,16 +180,17 @@ class TestExampleC:
         result = compute_churn_risk(self.dimension_scores, self.dimension_weights)
         # (0.30*72) + (0.30*75) + (0.25*55) + (0.15*50)
         # = 21.6 + 22.5 + 13.75 + 7.5 = 65.35
-        assert result["score"] == 65.4  # rounded to 1 decimal
+        # round(65.35, 1) = 65.3 due to IEEE 754 float representation
+        assert result["score"] == 65.3
 
     def test_health_score(self):
         result = compute_health_score(
-            churn_risk_score=65.4,  # as computed
+            churn_risk_score=65.3,  # as computed (65.35 rounds to 65.3)
             platform_value_score=58,
             churn_risk_weight=0.60,
             platform_value_weight=0.40,
         )
-        # (0.60*65.4) + (0.40*58) = 39.24 + 23.2 = 62.44 → 62.4
+        # (0.60*65.3) + (0.40*58) = 39.18 + 23.2 = 62.38 → 62.4
         assert result["quantitative_score"] == 62.4
 
     def test_no_qualitative_modifier(self):

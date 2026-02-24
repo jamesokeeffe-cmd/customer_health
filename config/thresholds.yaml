@@ -74,6 +74,28 @@ support_health:
       yellow: 20
       red: 40
 
+  open_bugs_p1_p2:
+    lower_is_better: true
+    paid:
+      green: 0
+      yellow: 2
+      red: 5
+    standard:
+      green: 0
+      yellow: 1
+      red: 3
+
+  open_bugs_total:
+    lower_is_better: true
+    paid:
+      green: 3
+      yellow: 8
+      red: 15
+    standard:
+      green: 2
+      yellow: 5
+      red: 10
+
 # ---------------------------------------------------------------------------
 # Financial & Contract
 # ---------------------------------------------------------------------------

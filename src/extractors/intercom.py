@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Intercom API extractor for Support Health metrics.
 
 Pulls conversation data per company for a 30-day window and calculates:

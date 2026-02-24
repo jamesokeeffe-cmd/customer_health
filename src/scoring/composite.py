@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Composite scoring: combine dimension scores into Churn Risk and Health Score.
 
 Health Score = (60% × Churn Risk Score) + (40% × Platform Value Score)

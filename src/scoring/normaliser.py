@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Normalise raw metric values to 0-100 scores using segment-specific thresholds.
 
 Linear interpolation between threshold boundaries:

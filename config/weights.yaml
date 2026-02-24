@@ -12,11 +12,13 @@ churn_risk:
 
 # Metric weights within each dimension (must sum to 1.0 within each dimension)
 support_health:
-  p1_p2_volume: 0.25
-  first_response_minutes: 0.20
-  close_time_hours: 0.20
-  reopen_rate_pct: 0.20
-  escalation_rate_pct: 0.15
+  p1_p2_volume: 0.20
+  first_response_minutes: 0.15
+  close_time_hours: 0.15
+  reopen_rate_pct: 0.15
+  escalation_rate_pct: 0.10
+  open_bugs_p1_p2: 0.15
+  open_bugs_total: 0.10
 
 financial_contract:
   days_to_renewal: 0.20

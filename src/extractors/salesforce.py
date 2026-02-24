@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Salesforce extractor for Financial & Contract, Relationship, and Qualitative Signal data.
 
 Reads from:

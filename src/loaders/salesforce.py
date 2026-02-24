@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Salesforce loader: writes Health_Score__c records.
 
 Creates one Health_Score__c record per Account per scoring period (append model).
