@@ -54,7 +54,17 @@ src/
   extractors/           # API clients (one per data source)
   scoring/              # Pure scoring logic (no I/O)
   loaders/              # Write results to Salesforce or CSV
-tests/                  # pytest tests
+tests/
+  conftest.py           # Mocks external SDKs (simple_salesforce, looker_sdk) for test env
+  test_integration.py   # End-to-end scoring pipeline tests
+  test_normaliser.py    # Normalisation logic tests
+  test_scoring.py       # Composite scoring, qualitative modifier tests
+  test_jira_extractor.py        # Jira extractor tests
+  test_intercom_extractor.py    # Intercom extractor tests
+  test_salesforce_extractor.py  # Salesforce extractor tests (financial, relationship, qualitative)
+  test_looker_extractor.py      # Looker extractor tests (adoption, PVS)
+  test_salesforce_loader.py     # Salesforce loader + dry-run CSV tests
+  test_orchestrator.py          # HealthScoreOrchestrator tests (init, scoring, run)
 dashboard.py            # Streamlit app
 ```
 
@@ -80,6 +90,5 @@ See `.env.example` for the full list. Key groups:
 
 ## Known Issues
 
-- `TestExampleC.test_churn_risk_score` fails: expects 65.4 but gets 65.3 (float rounding)
 - Account mapping CSV has headers only — no real accounts configured yet
 - Salesforce extractor uses f-string SOQL (safe for internal IDs, not for user input)
