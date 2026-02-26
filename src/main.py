@@ -33,6 +33,119 @@ from src.scoring.qualitative import apply_qualitative_modifier
 
 logger = logging.getLogger("health_score")
 
+# Dimension sections that must appear in both weights.yaml and thresholds.yaml
+_SCORED_DIMENSIONS = [
+    "support_health",
+    "financial_contract",
+    "adoption_engagement",
+    "relationship_expansion",
+    "platform_value",
+]
+
+_SEGMENTS = ["paid", "standard"]
+
+
+def validate_config(weights: dict, thresholds: dict) -> list[str]:
+    """Validate weights and thresholds config, returning a list of error messages.
+
+    Checks:
+    - Required top-level keys in weights (health_score, churn_risk, dimensions)
+    - health_score has churn_risk_weight and platform_value_weight
+    - Each scored dimension exists in both weights and thresholds
+    - Metric weights within each dimension sum to ~1.0
+    - Each metric in weights has a matching threshold entry
+    - Each threshold entry has lower_is_better, paid, and standard segments
+    - Each segment has green, yellow, red values
+    - Threshold ordering matches lower_is_better direction
+    """
+    errors = []
+
+    # --- weights top-level keys ---
+    for key in ["health_score", "churn_risk"]:
+        if key not in weights:
+            errors.append(f"weights.yaml missing required key: '{key}'")
+
+    hs = weights.get("health_score", {})
+    for field in ["churn_risk_weight", "platform_value_weight"]:
+        if field not in hs:
+            errors.append(f"weights.yaml health_score missing '{field}'")
+
+    # --- churn_risk dimension weights ---
+    cr = weights.get("churn_risk", {})
+    for dim in _SCORED_DIMENSIONS[:4]:  # first 4 are churn risk dimensions
+        if dim not in cr:
+            errors.append(f"weights.yaml churn_risk missing dimension weight: '{dim}'")
+
+    # --- each scored dimension ---
+    for dim in _SCORED_DIMENSIONS:
+        if dim not in weights:
+            errors.append(f"weights.yaml missing dimension section: '{dim}'")
+            continue
+        if dim not in thresholds:
+            errors.append(f"thresholds.yaml missing dimension section: '{dim}'")
+            continue
+
+        metric_weights = weights[dim]
+        dim_thresholds = thresholds[dim]
+
+        # Metric weights should sum to ~1.0
+        weight_sum = sum(metric_weights.values())
+        if abs(weight_sum - 1.0) > 0.01:
+            errors.append(
+                f"weights.yaml '{dim}' metric weights sum to {weight_sum:.3f}, expected ~1.0"
+            )
+
+        # Each metric needs a threshold entry
+        for metric_name in metric_weights:
+            if metric_name not in dim_thresholds:
+                errors.append(
+                    f"thresholds.yaml '{dim}' missing threshold for metric: '{metric_name}'"
+                )
+                continue
+
+            tc = dim_thresholds[metric_name]
+
+            if "lower_is_better" not in tc:
+                errors.append(
+                    f"thresholds.yaml '{dim}.{metric_name}' missing 'lower_is_better'"
+                )
+
+            lower_is_better = tc.get("lower_is_better", False)
+
+            for seg in _SEGMENTS:
+                if seg not in tc:
+                    errors.append(
+                        f"thresholds.yaml '{dim}.{metric_name}' missing segment: '{seg}'"
+                    )
+                    continue
+
+                seg_t = tc[seg]
+                for boundary in ["green", "yellow", "red"]:
+                    if boundary not in seg_t:
+                        errors.append(
+                            f"thresholds.yaml '{dim}.{metric_name}.{seg}' "
+                            f"missing '{boundary}'"
+                        )
+
+                if all(b in seg_t for b in ["green", "yellow", "red"]):
+                    g, y, r = seg_t["green"], seg_t["yellow"], seg_t["red"]
+                    if lower_is_better:
+                        if not (g <= y <= r):
+                            errors.append(
+                                f"thresholds.yaml '{dim}.{metric_name}.{seg}': "
+                                f"lower_is_better=true requires green<=yellow<=red, "
+                                f"got {g}, {y}, {r}"
+                            )
+                    else:
+                        if not (g >= y >= r):
+                            errors.append(
+                                f"thresholds.yaml '{dim}.{metric_name}.{seg}': "
+                                f"lower_is_better=false requires green>=yellow>=red, "
+                                f"got {g}, {y}, {r}"
+                            )
+
+    return errors
+
 
 def load_yaml(path: str) -> dict:
     with open(path) as f:
@@ -89,6 +202,14 @@ class HealthScoreOrchestrator:
         self.account_mapping = load_account_mapping(
             str(self.config_dir / "account_mapping.csv")
         )
+
+        # Validate config consistency
+        config_errors = validate_config(self.weights, self.thresholds)
+        if config_errors:
+            raise ValueError(
+                f"Config validation failed with {len(config_errors)} error(s):\n"
+                + "\n".join(f"  - {e}" for e in config_errors)
+            )
 
         # Extractors and loader are initialised lazily via init_clients()
         self.intercom: IntercomExtractor | None = None

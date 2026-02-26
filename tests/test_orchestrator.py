@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.main import HealthScoreOrchestrator, load_account_mapping
+from src.main import HealthScoreOrchestrator, load_account_mapping, validate_config
 
 
 @pytest.fixture
@@ -525,3 +525,158 @@ class TestLoadAccountMapping:
         msg = str(exc_info.value)
         assert "looker_customer_id" in msg
         assert "segment" in msg
+
+
+# ---------------------------------------------------------------------------
+# TestValidateConfig
+# ---------------------------------------------------------------------------
+
+def _make_threshold(lower_is_better=True, paid=None, standard=None):
+    """Build a single metric threshold entry."""
+    if paid is None:
+        paid = {"green": 0, "yellow": 5, "red": 10} if lower_is_better else {"green": 10, "yellow": 5, "red": 0}
+    if standard is None:
+        standard = paid.copy()
+    return {"lower_is_better": lower_is_better, "paid": paid, "standard": standard}
+
+
+def _valid_weights():
+    """Return a minimal valid weights dict."""
+    return {
+        "health_score": {"churn_risk_weight": 0.60, "platform_value_weight": 0.40},
+        "churn_risk": {
+            "support_health": 0.30,
+            "financial_contract": 0.30,
+            "adoption_engagement": 0.25,
+            "relationship_expansion": 0.15,
+        },
+        "support_health": {"m1": 0.5, "m2": 0.5},
+        "financial_contract": {"m1": 1.0},
+        "adoption_engagement": {"m1": 1.0},
+        "relationship_expansion": {"m1": 1.0},
+        "platform_value": {"m1": 1.0},
+    }
+
+
+def _valid_thresholds():
+    """Return thresholds matching _valid_weights metrics."""
+    return {
+        "support_health": {"m1": _make_threshold(), "m2": _make_threshold()},
+        "financial_contract": {"m1": _make_threshold()},
+        "adoption_engagement": {"m1": _make_threshold()},
+        "relationship_expansion": {"m1": _make_threshold()},
+        "platform_value": {"m1": _make_threshold()},
+    }
+
+
+class TestValidateConfig:
+    def test_valid_config_no_errors(self):
+        errors = validate_config(_valid_weights(), _valid_thresholds())
+        assert errors == []
+
+    def test_real_config_no_errors(self):
+        """Validate the actual project config files pass."""
+        import yaml
+        with open("config/weights.yaml") as f:
+            weights = yaml.safe_load(f)
+        with open("config/thresholds.yaml") as f:
+            thresholds = yaml.safe_load(f)
+        errors = validate_config(weights, thresholds)
+        assert errors == [], f"Real config errors: {errors}"
+
+    def test_missing_health_score_key(self):
+        w = _valid_weights()
+        del w["health_score"]
+        errors = validate_config(w, _valid_thresholds())
+        assert any("health_score" in e for e in errors)
+
+    def test_missing_churn_risk_key(self):
+        w = _valid_weights()
+        del w["churn_risk"]
+        errors = validate_config(w, _valid_thresholds())
+        assert any("churn_risk" in e for e in errors)
+
+    def test_missing_health_score_subfield(self):
+        w = _valid_weights()
+        del w["health_score"]["platform_value_weight"]
+        errors = validate_config(w, _valid_thresholds())
+        assert any("platform_value_weight" in e for e in errors)
+
+    def test_missing_dimension_in_weights(self):
+        w = _valid_weights()
+        del w["support_health"]
+        errors = validate_config(w, _valid_thresholds())
+        assert any("missing dimension section" in e and "support_health" in e for e in errors)
+
+    def test_missing_dimension_in_thresholds(self):
+        t = _valid_thresholds()
+        del t["financial_contract"]
+        errors = validate_config(_valid_weights(), t)
+        assert any("thresholds.yaml" in e and "financial_contract" in e for e in errors)
+
+    def test_weight_sum_not_one(self):
+        w = _valid_weights()
+        w["support_health"] = {"m1": 0.3, "m2": 0.3}  # sum = 0.6
+        errors = validate_config(w, _valid_thresholds())
+        assert any("sum to" in e and "support_health" in e for e in errors)
+
+    def test_weight_sum_tolerance(self):
+        """Weights summing to 1.005 should pass (within 0.01 tolerance)."""
+        w = _valid_weights()
+        w["support_health"] = {"m1": 0.505, "m2": 0.5}
+        errors = validate_config(w, _valid_thresholds())
+        assert not any("sum to" in e and "support_health" in e for e in errors)
+
+    def test_missing_metric_threshold(self):
+        t = _valid_thresholds()
+        del t["support_health"]["m2"]
+        errors = validate_config(_valid_weights(), t)
+        assert any("missing threshold" in e and "m2" in e for e in errors)
+
+    def test_missing_lower_is_better(self):
+        t = _valid_thresholds()
+        del t["support_health"]["m1"]["lower_is_better"]
+        errors = validate_config(_valid_weights(), t)
+        assert any("lower_is_better" in e for e in errors)
+
+    def test_missing_segment(self):
+        t = _valid_thresholds()
+        del t["support_health"]["m1"]["paid"]
+        errors = validate_config(_valid_weights(), t)
+        assert any("missing segment" in e and "paid" in e for e in errors)
+
+    def test_missing_boundary(self):
+        t = _valid_thresholds()
+        del t["support_health"]["m1"]["paid"]["yellow"]
+        errors = validate_config(_valid_weights(), t)
+        assert any("missing 'yellow'" in e for e in errors)
+
+    def test_lower_is_better_wrong_order(self):
+        t = _valid_thresholds()
+        # lower_is_better=true requires green <= yellow <= red, set reversed
+        t["support_health"]["m1"]["paid"] = {"green": 10, "yellow": 5, "red": 0}
+        errors = validate_config(_valid_weights(), t)
+        assert any("green<=yellow<=red" in e for e in errors)
+
+    def test_higher_is_better_wrong_order(self):
+        t = _valid_thresholds()
+        t["support_health"]["m1"]["lower_is_better"] = False
+        # lower_is_better=false requires green >= yellow >= red, set reversed
+        t["support_health"]["m1"]["paid"] = {"green": 0, "yellow": 5, "red": 10}
+        t["support_health"]["m1"]["standard"] = {"green": 0, "yellow": 5, "red": 10}
+        errors = validate_config(_valid_weights(), t)
+        assert any("green>=yellow>=red" in e for e in errors)
+
+    def test_missing_churn_risk_dimension_weight(self):
+        w = _valid_weights()
+        del w["churn_risk"]["support_health"]
+        errors = validate_config(w, _valid_thresholds())
+        assert any("churn_risk missing dimension weight" in e for e in errors)
+
+    def test_multiple_errors_reported(self):
+        """All errors are collected, not just the first."""
+        w = _valid_weights()
+        del w["health_score"]
+        del w["churn_risk"]
+        errors = validate_config(w, _valid_thresholds())
+        assert len(errors) >= 2

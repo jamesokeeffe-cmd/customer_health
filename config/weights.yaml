@@ -51,4 +51,4 @@ platform_value:
   digital_key_pct: 0.10
   automation_active: 0.10
   itinerary_booking_pct: 0.05
-  page_visits_per_arrival: 0.05
+  page_visits_per_arrival: 0.10
