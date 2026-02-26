@@ -164,28 +164,29 @@ financial_contract:
 # Adoption & Engagement
 # ---------------------------------------------------------------------------
 adoption_engagement:
-  staff_login_trend:
-    # Percentage change in staff logins (30d vs prior 30d). Positive = growing
+  page_visits_per_arrival:
+    # Average page visits per arrival (guest/user engagement depth)
     lower_is_better: false
     paid:
-      green: 5      # >5% growth
-      yellow: -10   # -10% to +5%
-      red: -30      # >30% decline = 0
+      green: 5
+      yellow: 3
+      red: 1
+    standard:
+      green: 4
+      yellow: 2
+      red: 1
+
+  page_visits_per_arrival_trend:
+    # Percentage change in page visits per arrival (30d vs prior 30d)
+    lower_is_better: false
+    paid:
+      green: 5
+      yellow: -10
+      red: -30
     standard:
       green: 0
       yellow: -15
       red: -30
-
-  admin_login_trend:
-    lower_is_better: false
-    paid:
-      green: 0      # stable or growing
-      yellow: -15
-      red: -40
-    standard:
-      green: 0
-      yellow: -15
-      red: -40
 
   feature_breadth_pct:
     # Percentage of available modules with activity in 30d

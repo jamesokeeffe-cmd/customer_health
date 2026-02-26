@@ -64,8 +64,8 @@ def _mock_extractor_results():
             "tier_alignment": 0,
         },
         "adoption": {
-            "staff_login_trend": 10.0,
-            "admin_login_trend": 5.0,
+            "page_visits_per_arrival": 10.0,
+            "page_visits_per_arrival_trend": 5.0,
             "feature_breadth_pct": 65.0,
             "platform_score": 72,
             "platform_score_trend": 3.0,

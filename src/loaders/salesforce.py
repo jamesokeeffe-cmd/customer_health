@@ -116,8 +116,8 @@ class SalesforceLoader:
             "Financial_ARR_Trajectory__c": financial_metrics.get("arr_trajectory_pct"),
             "Financial_Tier_Alignment__c": financial_metrics.get("tier_alignment"),
             # Adoption metrics
-            "Adoption_Login_Trend__c": adoption_metrics.get("staff_login_trend"),
-            "Adoption_Admin_Logins__c": adoption_metrics.get("admin_login_trend"),
+            "Adoption_Page_Visits__c": adoption_metrics.get("page_visits_per_arrival"),
+            "Adoption_Page_Visits_Trend__c": adoption_metrics.get("page_visits_per_arrival_trend"),
             "Adoption_Feature_Breadth__c": adoption_metrics.get("feature_breadth_pct"),
             "Adoption_Platform_Score__c": adoption_metrics.get("platform_score"),
             "Adoption_Platform_Trend__c": adoption_metrics.get("platform_score_trend"),

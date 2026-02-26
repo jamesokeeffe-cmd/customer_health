@@ -3,8 +3,7 @@ from __future__ import annotations
 """Looker API extractor for Adoption & Engagement metrics and Platform Value Score.
 
 Queries Looker Explores/Looks for:
-- Staff login counts (current 30d, 60d ago, 90d ago)
-- Admin login counts (same windows)
+- Page visits per arrival (current 30d + prior 30d for trend)
 - Feature adoption breadth
 - License utilisation
 - AXP Platform Score (current + historical)
@@ -77,7 +76,6 @@ class LookerExtractor:
         self,
         looker_customer_id: str,
         model_name: str = "alliants",
-        login_view: str = "user_sessions",
         feature_view: str = "feature_usage",
         customer_field: str = "customer_id",
     ) -> dict:
@@ -85,42 +83,14 @@ class LookerExtractor:
 
         Returns:
             dict with keys:
-                staff_login_trend (% change 30d vs prior 30d)
-                admin_login_trend (% change)
+                page_visits_per_arrival (avg page visits per arrival, current 30d)
+                page_visits_per_arrival_trend (% change 30d vs prior 30d)
                 feature_breadth_pct (% of modules active)
                 platform_score (current AXP score)
                 platform_score_trend (change over 90d)
         """
-        # Staff login counts across three 30-day windows
-        staff_logins = {}
-        for period, date_filter in [
-            ("current", "30 days"),
-            ("prev_30d", "30 days ago for 30 days"),
-            ("prev_60d", "60 days ago for 30 days"),
-        ]:
-            try:
-                rows = self._run_inline_query(
-                    model=model_name,
-                    view=login_view,
-                    fields=[
-                        f"{login_view}.{customer_field}",
-                        f"{login_view}.unique_staff_logins",
-                    ],
-                    filters={
-                        f"{login_view}.{customer_field}": looker_customer_id,
-                        f"{login_view}.session_date": date_filter,
-                    },
-                )
-                staff_logins[period] = (
-                    rows[0].get(f"{login_view}.unique_staff_logins", 0)
-                    if rows else 0
-                )
-            except Exception:
-                logger.exception("Failed to fetch staff logins for period %s", period)
-                staff_logins[period] = None
-
-        # Admin login counts
-        admin_logins = {}
+        # Page visits per arrival (current 30d + prior 30d for trend)
+        pvpa = {}
         for period, date_filter in [
             ("current", "30 days"),
             ("prev_30d", "30 days ago for 30 days"),
@@ -128,24 +98,23 @@ class LookerExtractor:
             try:
                 rows = self._run_inline_query(
                     model=model_name,
-                    view=login_view,
+                    view="platform_score",
                     fields=[
-                        f"{login_view}.{customer_field}",
-                        f"{login_view}.unique_admin_logins",
+                        "platform_score.customer_id",
+                        "platform_score.total_page_visits_per_arrival",
                     ],
                     filters={
-                        f"{login_view}.{customer_field}": looker_customer_id,
-                        f"{login_view}.session_date": date_filter,
-                        f"{login_view}.user_role": "admin,manager",
+                        "platform_score.customer_id": looker_customer_id,
+                        "platform_score.score_date": date_filter,
                     },
                 )
-                admin_logins[period] = (
-                    rows[0].get(f"{login_view}.unique_admin_logins", 0)
+                pvpa[period] = (
+                    rows[0].get("platform_score.total_page_visits_per_arrival", 0)
                     if rows else 0
                 )
             except Exception:
-                logger.exception("Failed to fetch admin logins for period %s", period)
-                admin_logins[period] = None
+                logger.exception("Failed to fetch page visits per arrival for period %s", period)
+                pvpa[period] = None
 
         # Feature adoption breadth
         feature_breadth = None
@@ -210,16 +179,11 @@ class LookerExtractor:
             logger.exception("Failed to fetch 90d-ago platform score")
 
         # Calculate trends
-        staff_trend = None
-        if staff_logins.get("current") is not None and staff_logins.get("prev_30d") is not None:
-            staff_trend = self._calc_trend_pct(
-                staff_logins["current"], staff_logins["prev_30d"]
-            )
-
-        admin_trend = None
-        if admin_logins.get("current") is not None and admin_logins.get("prev_30d") is not None:
-            admin_trend = self._calc_trend_pct(
-                admin_logins["current"], admin_logins["prev_30d"]
+        pvpa_current = pvpa.get("current")
+        pvpa_trend = None
+        if pvpa_current is not None and pvpa.get("prev_30d") is not None:
+            pvpa_trend = self._calc_trend_pct(
+                pvpa_current, pvpa["prev_30d"]
             )
 
         platform_trend = None
@@ -227,8 +191,8 @@ class LookerExtractor:
             platform_trend = round(platform_current - platform_90d_ago, 1)
 
         return {
-            "staff_login_trend": staff_trend,
-            "admin_login_trend": admin_trend,
+            "page_visits_per_arrival": pvpa_current,
+            "page_visits_per_arrival_trend": pvpa_trend,
             "feature_breadth_pct": feature_breadth,
             "platform_score": platform_current,
             "platform_score_trend": platform_trend,

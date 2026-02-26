@@ -28,8 +28,8 @@ financial_contract:
   tier_alignment: 0.15
 
 adoption_engagement:
-  staff_login_trend: 0.20
-  admin_login_trend: 0.15
+  page_visits_per_arrival: 0.20
+  page_visits_per_arrival_trend: 0.15
   feature_breadth_pct: 0.25
   platform_score: 0.25
   platform_score_trend: 0.15

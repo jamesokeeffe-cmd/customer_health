@@ -68,8 +68,8 @@ def _make_scoring_result(
             "adoption_engagement": {
                 "score": adoption_score,
                 "metric_scores": {
-                    "staff_login_trend": 75,
-                    "admin_login_trend": 60,
+                    "page_visits_per_arrival": 75,
+                    "page_visits_per_arrival_trend": 60,
                     "feature_breadth_pct": 80,
                     "platform_score": 65,
                     "platform_score_trend": 70,

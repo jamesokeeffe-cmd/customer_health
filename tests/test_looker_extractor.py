@@ -135,13 +135,9 @@ class TestExtractAdoptionMetrics:
         """All queries succeed with data."""
         call_count = [0]
         responses = [
-            # Staff logins: current=100, prev_30d=80, prev_60d=60
-            [{"user_sessions.unique_staff_logins": 100}],
-            [{"user_sessions.unique_staff_logins": 80}],
-            [{"user_sessions.unique_staff_logins": 60}],
-            # Admin logins: current=20, prev_30d=25
-            [{"user_sessions.unique_admin_logins": 20}],
-            [{"user_sessions.unique_admin_logins": 25}],
+            # Page visits per arrival: current=6.5, prev_30d=5.0
+            [{"platform_score.total_page_visits_per_arrival": 6.5}],
+            [{"platform_score.total_page_visits_per_arrival": 5.0}],
             # Feature breadth: 6 active of 10 total
             [{"feature_usage.active_module_count": 6, "feature_usage.total_module_count": 10}],
             # Platform score current
@@ -159,8 +155,8 @@ class TestExtractAdoptionMetrics:
 
         result = extractor.extract_adoption_metrics("cust-1")
 
-        assert result["staff_login_trend"] == 25.0  # (100-80)/80*100
-        assert result["admin_login_trend"] == -20.0  # (20-25)/25*100
+        assert result["page_visits_per_arrival"] == 6.5
+        assert result["page_visits_per_arrival_trend"] == 30.0  # (6.5-5.0)/5.0*100
         assert result["feature_breadth_pct"] == 60.0  # 6/10*100
         assert result["platform_score"] == 72
         assert result["platform_score_trend"] == 7.0  # 72-65
@@ -172,17 +168,15 @@ class TestExtractAdoptionMetrics:
         def side_effect(**kwargs):
             idx = call_count[0]
             call_count[0] += 1
-            # Fail the feature breadth query (index 5)
-            if idx == 5:
+            # Fail the feature breadth query (index 2)
+            if idx == 2:
                 raise Exception("Looker API error")
-            # Return zero for everything else
-            if idx < 3:
-                return [{"user_sessions.unique_staff_logins": 10}]
-            if idx < 5:
-                return [{"user_sessions.unique_admin_logins": 5}]
-            if idx == 6:
+            # Page visits per arrival
+            if idx < 2:
+                return [{"platform_score.total_page_visits_per_arrival": 4.0}]
+            if idx == 3:
                 return [{"platform_score.score": 50}]
-            if idx == 7:
+            if idx == 4:
                 return [{"platform_score.score": 45}]
             return []
 
@@ -191,7 +185,7 @@ class TestExtractAdoptionMetrics:
         result = extractor.extract_adoption_metrics("cust-1")
 
         assert result["feature_breadth_pct"] is None
-        assert result["staff_login_trend"] is not None
+        assert result["page_visits_per_arrival"] is not None
 
     def test_empty_results(self, extractor):
         """Empty query results produce zero/None metrics."""
@@ -199,8 +193,9 @@ class TestExtractAdoptionMetrics:
 
         result = extractor.extract_adoption_metrics("cust-1")
 
-        # Staff logins are 0 from empty results, trend = 0%
-        assert result["staff_login_trend"] == 0.0
+        # Page visits per arrival is 0 from empty results, trend = 0%
+        assert result["page_visits_per_arrival"] == 0
+        assert result["page_visits_per_arrival_trend"] == 0.0
         assert result["feature_breadth_pct"] is None
         assert result["platform_score"] is None
 
@@ -211,11 +206,9 @@ class TestExtractAdoptionMetrics:
         def side_effect(**kwargs):
             idx = call_count[0]
             call_count[0] += 1
-            if idx < 3:
-                return [{"user_sessions.unique_staff_logins": 0}]
-            if idx < 5:
-                return [{"user_sessions.unique_admin_logins": 0}]
-            if idx == 5:
+            if idx < 2:
+                return [{"platform_score.total_page_visits_per_arrival": 0}]
+            if idx == 2:
                 return [{"feature_usage.active_module_count": 3, "feature_usage.total_module_count": 0}]
             return []
 
@@ -232,8 +225,8 @@ class TestExtractAdoptionMetrics:
 
         result = extractor.extract_adoption_metrics("cust-1")
 
-        assert result["staff_login_trend"] is None
-        assert result["admin_login_trend"] is None
+        assert result["page_visits_per_arrival"] is None
+        assert result["page_visits_per_arrival_trend"] is None
         assert result["feature_breadth_pct"] is None
         assert result["platform_score"] is None
         assert result["platform_score_trend"] is None
