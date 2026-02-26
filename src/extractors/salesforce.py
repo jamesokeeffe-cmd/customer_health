@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 
 from simple_salesforce import Salesforce
 
+from src.extractors.retry import mount_retry_adapter
+
 logger = logging.getLogger(__name__)
 
 # Salesforce IDs are 15 (case-sensitive) or 18 (case-insensitive) alphanumeric chars
@@ -60,6 +62,10 @@ class SalesforceExtractor:
                 security_token=security_token or "",
                 domain=domain,
             )
+
+        # Mount retry adapter on the underlying requests session
+        if hasattr(self.sf, "session"):
+            mount_retry_adapter(self.sf.session)
 
     def extract_financial_metrics(self, sf_account_id: str) -> dict:
         """Extract Financial & Contract metrics for one Account.

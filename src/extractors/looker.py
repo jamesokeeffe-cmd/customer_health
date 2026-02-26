@@ -15,6 +15,8 @@ import logging
 import looker_sdk
 from looker_sdk import models40 as models
 
+from src.extractors.retry import retry_on_transient
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -66,6 +68,7 @@ class LookerExtractor:
         instance._look_cache = {}
         return instance
 
+    @retry_on_transient(max_retries=3, backoff_factor=1.0)
     def _run_inline_query(
         self,
         model: str,
@@ -90,6 +93,7 @@ class LookerExtractor:
         import json
         return json.loads(result) if isinstance(result, str) else result
 
+    @retry_on_transient(max_retries=3, backoff_factor=1.0)
     def _run_look(self, look_id: int) -> list[dict]:
         """Run a saved Look and return results as dicts."""
         result = self.sdk.run_look(look_id=look_id, result_format="json")

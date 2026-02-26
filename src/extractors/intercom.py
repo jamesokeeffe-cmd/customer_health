@@ -16,6 +16,8 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+from src.extractors.retry import mount_retry_adapter
+
 logger = logging.getLogger(__name__)
 
 INTERCOM_API_BASE = "https://api.intercom.io"
@@ -29,6 +31,7 @@ class IntercomExtractor:
             "Accept": "application/json",
             "Content-Type": "application/json",
         })
+        mount_retry_adapter(self.session)
         self.lookback_days = lookback_days
 
     def _get_paginated(self, url: str, params: dict | None = None) -> list[dict]:

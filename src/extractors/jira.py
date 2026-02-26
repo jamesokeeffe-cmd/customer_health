@@ -12,6 +12,8 @@ import logging
 
 import requests
 
+from src.extractors.retry import mount_retry_adapter
+
 logger = logging.getLogger(__name__)
 
 # Jira priority names considered P1/P2
@@ -27,6 +29,7 @@ class JiraExtractor:
             "Accept": "application/json",
             "Content-Type": "application/json",
         })
+        mount_retry_adapter(self.session)
 
     def _search_issues(
         self, jql: str, fields: list[str], max_results: int = 100
