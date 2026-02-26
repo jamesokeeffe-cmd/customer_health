@@ -10,11 +10,21 @@ Reads from:
 """
 
 import logging
+import re
 from datetime import datetime, timezone
 
 from simple_salesforce import Salesforce
 
 logger = logging.getLogger(__name__)
+
+# Salesforce IDs are 15 (case-sensitive) or 18 (case-insensitive) alphanumeric chars
+_SF_ID_PATTERN = re.compile(r"^[a-zA-Z0-9]{15,18}$")
+
+
+def _validate_sf_id(value: str) -> None:
+    """Raise ValueError if *value* doesn't look like a Salesforce ID."""
+    if not _SF_ID_PATTERN.match(value):
+        raise ValueError(f"Invalid Salesforce ID: {value!r}")
 
 
 class SalesforceExtractor:
@@ -59,6 +69,7 @@ class SalesforceExtractor:
                 days_to_renewal, payment_health, contract_changes,
                 arr_trajectory_pct, tier_alignment
         """
+        _validate_sf_id(sf_account_id)
         # Get Account fields
         account = self.sf.Account.get(sf_account_id)
         current_arr = float(account.get("ARR__c") or 0)
@@ -148,6 +159,7 @@ class SalesforceExtractor:
         Returns None if Phase 2 fields don't exist yet, signalling to the scoring
         engine to reweight this dimension.
         """
+        _validate_sf_id(sf_account_id)
         try:
             # QBR attendance
             qbr_query = (
@@ -219,6 +231,7 @@ class SalesforceExtractor:
                 critical_count, moderate_count, watch_count,
                 has_critical_confirmed, signals (list of signal records)
         """
+        _validate_sf_id(sf_account_id)
         query = (
             f"SELECT Id, Signal_Category__c, Signal_Detail__c, Severity__c, "
             f"Confidence__c, Status__c, Date_Observed__c "
@@ -275,8 +288,13 @@ class SalesforceExtractor:
         Returns:
             List of Account dicts with Id, Name, ARR__c, Success_Tier__c.
         """
+        _ALLOWED_SEGMENTS = {"Paid", "Standard"}
         where_clause = ""
         if segment:
+            if segment not in _ALLOWED_SEGMENTS:
+                raise ValueError(
+                    f"Invalid segment: {segment!r}. Must be one of {_ALLOWED_SEGMENTS}"
+                )
             where_clause = f"WHERE Success_Tier__c = '{segment}'"
 
         query = (

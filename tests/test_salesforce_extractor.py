@@ -37,7 +37,7 @@ def _query_result(records: list[dict], total: int | None = None) -> dict:
 
 def _account_record(arr: float = 100000, tier: str = "Paid") -> dict:
     return {
-        "Id": "001ABC",
+        "Id": "001ABC000000000",
         "ARR__c": arr,
         "Success_Tier__c": tier,
     }
@@ -67,7 +67,7 @@ class TestExtractFinancialMetrics:
             arr_history,
         ]
 
-        result = extractor.extract_financial_metrics("001ABC")
+        result = extractor.extract_financial_metrics("001ABC000000000")
 
         assert result["days_to_renewal"] is not None
         assert result["payment_health"] == 2
@@ -84,7 +84,7 @@ class TestExtractFinancialMetrics:
             _query_result([]),          # arr history
         ]
 
-        result = extractor.extract_financial_metrics("001ABC")
+        result = extractor.extract_financial_metrics("001ABC000000000")
         assert result["days_to_renewal"] is None
 
     def test_payment_query_failure_graceful(self, extractor):
@@ -103,7 +103,7 @@ class TestExtractFinancialMetrics:
 
         extractor.sf.query.side_effect = query_side_effect
 
-        result = extractor.extract_financial_metrics("001ABC")
+        result = extractor.extract_financial_metrics("001ABC000000000")
         assert result["payment_health"] == 0  # falls back to 0
 
     def test_contract_query_failure_graceful(self, extractor):
@@ -122,7 +122,7 @@ class TestExtractFinancialMetrics:
 
         extractor.sf.query.side_effect = query_side_effect
 
-        result = extractor.extract_financial_metrics("001ABC")
+        result = extractor.extract_financial_metrics("001ABC000000000")
         assert result["contract_changes"] == 0
 
     def test_arr_trajectory_calculation(self, extractor):
@@ -134,7 +134,7 @@ class TestExtractFinancialMetrics:
             _query_result([{"ARR__c": 250000}]),  # old ARR was higher
         ]
 
-        result = extractor.extract_financial_metrics("001ABC")
+        result = extractor.extract_financial_metrics("001ABC000000000")
         # (200k - 250k) / 250k * 100 = -20%
         assert result["arr_trajectory_pct"] == -20.0
 
@@ -147,7 +147,7 @@ class TestExtractFinancialMetrics:
             _query_result([{"ARR__c": 0}]),
         ]
 
-        result = extractor.extract_financial_metrics("001ABC")
+        result = extractor.extract_financial_metrics("001ABC000000000")
         assert result["arr_trajectory_pct"] == 0.0
 
     def test_tier_alignment_misaligned(self, extractor):
@@ -160,7 +160,7 @@ class TestExtractFinancialMetrics:
             _query_result([]),
         ]
 
-        result = extractor.extract_financial_metrics("001ABC")
+        result = extractor.extract_financial_metrics("001ABC000000000")
         assert result["tier_alignment"] == 1
 
     def test_tier_alignment_aligned(self, extractor):
@@ -173,7 +173,7 @@ class TestExtractFinancialMetrics:
             _query_result([]),
         ]
 
-        result = extractor.extract_financial_metrics("001ABC")
+        result = extractor.extract_financial_metrics("001ABC000000000")
         assert result["tier_alignment"] == 0
 
     def test_arr_history_query_failure(self, extractor):
@@ -192,7 +192,7 @@ class TestExtractFinancialMetrics:
 
         extractor.sf.query.side_effect = query_side_effect
 
-        result = extractor.extract_financial_metrics("001ABC")
+        result = extractor.extract_financial_metrics("001ABC000000000")
         assert result["arr_trajectory_pct"] == 0.0
 
 
@@ -212,7 +212,7 @@ class TestExtractRelationshipMetrics:
             _query_result([], total=2),   # CSQLs
         ]
 
-        result = extractor.extract_relationship_metrics("001ABC")
+        result = extractor.extract_relationship_metrics("001ABC000000000")
 
         assert result is not None
         assert result["qbr_attendance_pct"] == 75.0  # 3/4
@@ -222,7 +222,7 @@ class TestExtractRelationshipMetrics:
     def test_returns_none_when_fields_dont_exist(self, extractor):
         extractor.sf.query.side_effect = Exception("Object not found")
 
-        result = extractor.extract_relationship_metrics("001ABC")
+        result = extractor.extract_relationship_metrics("001ABC000000000")
         assert result is None
 
     def test_no_qbrs_scheduled(self, extractor):
@@ -233,7 +233,7 @@ class TestExtractRelationshipMetrics:
             _query_result([], total=0),   # CSQLs
         ]
 
-        result = extractor.extract_relationship_metrics("001ABC")
+        result = extractor.extract_relationship_metrics("001ABC000000000")
         assert result["qbr_attendance_pct"] is None  # 0/0 = None
 
     def test_no_champion(self, extractor):
@@ -244,7 +244,7 @@ class TestExtractRelationshipMetrics:
             _query_result([], total=0),
         ]
 
-        result = extractor.extract_relationship_metrics("001ABC")
+        result = extractor.extract_relationship_metrics("001ABC000000000")
         assert result["champion_stability"] is None
 
     def test_csql_query_failure(self, extractor):
@@ -265,7 +265,7 @@ class TestExtractRelationshipMetrics:
 
         extractor.sf.query.side_effect = query_side_effect
 
-        result = extractor.extract_relationship_metrics("001ABC")
+        result = extractor.extract_relationship_metrics("001ABC000000000")
         assert result["expansion_signals"] == 0
 
 
@@ -283,7 +283,7 @@ class TestExtractQualitativeSignals:
         ]
         extractor.sf.query.return_value = _query_result(signals)
 
-        result = extractor.extract_qualitative_signals("001ABC")
+        result = extractor.extract_qualitative_signals("001ABC000000000")
 
         assert result["critical_count"] == 1
         # 1 active moderate + 1 monitoring critical (reduced to moderate)
@@ -294,7 +294,7 @@ class TestExtractQualitativeSignals:
     def test_no_signals(self, extractor):
         extractor.sf.query.return_value = _query_result([])
 
-        result = extractor.extract_qualitative_signals("001ABC")
+        result = extractor.extract_qualitative_signals("001ABC000000000")
 
         assert result["critical_count"] == 0
         assert result["moderate_count"] == 0
@@ -308,7 +308,7 @@ class TestExtractQualitativeSignals:
         ]
         extractor.sf.query.return_value = _query_result(signals)
 
-        result = extractor.extract_qualitative_signals("001ABC")
+        result = extractor.extract_qualitative_signals("001ABC000000000")
 
         assert result["has_critical_confirmed"] is True
         assert result["critical_count"] == 1
@@ -321,7 +321,7 @@ class TestExtractQualitativeSignals:
         ]
         extractor.sf.query.return_value = _query_result(signals)
 
-        result = extractor.extract_qualitative_signals("001ABC")
+        result = extractor.extract_qualitative_signals("001ABC000000000")
 
         # Monitoring Critical → counts as Moderate
         # Monitoring Moderate → counts as Watch
@@ -335,7 +335,7 @@ class TestExtractQualitativeSignals:
         ]
         extractor.sf.query.return_value = _query_result(signals)
 
-        result = extractor.extract_qualitative_signals("001ABC")
+        result = extractor.extract_qualitative_signals("001ABC000000000")
         assert result["signals"] == signals
 
 
@@ -346,8 +346,8 @@ class TestExtractQualitativeSignals:
 class TestGetAllAccounts:
     def test_no_filter(self, extractor):
         accounts = [
-            {"Id": "001", "Name": "Acme", "ARR__c": 100000, "Success_Tier__c": "Paid"},
-            {"Id": "002", "Name": "Beta", "ARR__c": 50000, "Success_Tier__c": "Standard"},
+            {"Id": "001000000000001", "Name": "Acme", "ARR__c": 100000, "Success_Tier__c": "Paid"},
+            {"Id": "002000000000001", "Name": "Beta", "ARR__c": 50000, "Success_Tier__c": "Standard"},
         ]
         extractor.sf.query_all.return_value = _query_result(accounts)
 
@@ -360,7 +360,7 @@ class TestGetAllAccounts:
 
     def test_segment_filter(self, extractor):
         accounts = [
-            {"Id": "001", "Name": "Acme", "ARR__c": 100000, "Success_Tier__c": "Paid"},
+            {"Id": "001000000000001", "Name": "Acme", "ARR__c": 100000, "Success_Tier__c": "Paid"},
         ]
         extractor.sf.query_all.return_value = _query_result(accounts)
 
@@ -437,3 +437,77 @@ class TestConstructorAuthModes:
                 security_token="",
                 domain="login",
             )
+
+
+# ---------------------------------------------------------------------------
+# TestSOQLInjectionGuard
+# ---------------------------------------------------------------------------
+
+class TestSOQLInjectionGuard:
+    """Verify that invalid Salesforce IDs and segment values are rejected."""
+
+    MALICIOUS_IDS = [
+        "' OR '1'='1",
+        "001ABC' --",
+        "001ABC'; DROP TABLE Account;--",
+        "",
+        "abc",                         # too short
+        "a" * 19,                      # too long
+        "001ABC!@#$%^&*()",            # special chars
+        "001 ABC 000 000 00",          # spaces
+    ]
+
+    VALID_IDS = [
+        "001ABC000000000",             # 15-char
+        "001ABC000000000AAA",          # 18-char
+        "0012x00000ABCDE",             # mixed case, 15-char
+        "0012x00000ABCDEfgh",          # mixed case, 18-char
+    ]
+
+    @pytest.mark.parametrize("bad_id", MALICIOUS_IDS)
+    def test_financial_rejects_bad_id(self, extractor, bad_id):
+        with pytest.raises(ValueError, match="Invalid Salesforce ID"):
+            extractor.extract_financial_metrics(bad_id)
+
+    @pytest.mark.parametrize("bad_id", MALICIOUS_IDS)
+    def test_relationship_rejects_bad_id(self, extractor, bad_id):
+        with pytest.raises(ValueError, match="Invalid Salesforce ID"):
+            extractor.extract_relationship_metrics(bad_id)
+
+    @pytest.mark.parametrize("bad_id", MALICIOUS_IDS)
+    def test_qualitative_rejects_bad_id(self, extractor, bad_id):
+        with pytest.raises(ValueError, match="Invalid Salesforce ID"):
+            extractor.extract_qualitative_signals(bad_id)
+
+    @pytest.mark.parametrize("valid_id", VALID_IDS)
+    def test_financial_accepts_valid_id(self, extractor, valid_id):
+        """Valid IDs pass validation (may fail on mock, but should not raise ValueError)."""
+        extractor.sf.Account.get.return_value = _account_record()
+        extractor.sf.query.side_effect = [
+            _query_result([]),
+            _query_result([], total=0),
+            _query_result([], total=0),
+            _query_result([]),
+        ]
+        # Should not raise ValueError
+        extractor.extract_financial_metrics(valid_id)
+
+    def test_segment_rejects_invalid_value(self, extractor):
+        with pytest.raises(ValueError, match="Invalid segment"):
+            extractor.get_all_accounts(segment="' OR '1'='1")
+
+    def test_segment_rejects_unknown_value(self, extractor):
+        with pytest.raises(ValueError, match="Invalid segment"):
+            extractor.get_all_accounts(segment="Premium")
+
+    def test_segment_accepts_paid(self, extractor):
+        extractor.sf.query_all.return_value = _query_result([])
+        extractor.get_all_accounts(segment="Paid")  # should not raise
+
+    def test_segment_accepts_standard(self, extractor):
+        extractor.sf.query_all.return_value = _query_result([])
+        extractor.get_all_accounts(segment="Standard")  # should not raise
+
+    def test_segment_none_skips_validation(self, extractor):
+        extractor.sf.query_all.return_value = _query_result([])
+        extractor.get_all_accounts(segment=None)  # should not raise
