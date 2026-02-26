@@ -7,7 +7,28 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.extractors.looker import LookerExtractor
+from src.extractors.looker import (
+    FIELD_ALLIN_PCT,
+    FIELD_ARRIVAL_CIOL_PCT,
+    FIELD_AUTOMATION_VALUE,
+    FIELD_CONVERSATIONS_BOOKING_PCT,
+    FIELD_CUSTOMER_ID,
+    FIELD_DIGITAL_KEY_PCT,
+    FIELD_ITINERARY_VISITS,
+    FIELD_MOBILE_KEY_PCT,
+    FIELD_PAGE_VISITS_PER_ARRIVAL,
+    FIELD_RESPONSE_PCT,
+    FIELD_SENTIMENT_PCT,
+    FIELD_TOTAL_BOOKINGS,
+    LOOK_ALLIN_USAGE,
+    LOOK_AUTOMATION,
+    LOOK_BOOKINGS,
+    LOOK_ITINERARY,
+    LOOK_PAGE_VISITS,
+    LOOK_RESPONSE_TIME,
+    LOOK_SENTIMENT,
+    LookerExtractor,
+)
 
 
 @pytest.fixture
@@ -233,57 +254,296 @@ class TestExtractAdoptionMetrics:
 
 
 # ---------------------------------------------------------------------------
+# TestGetLookData (cache behaviour)
+# ---------------------------------------------------------------------------
+
+class TestGetLookData:
+    def test_caches_look_results(self, extractor):
+        """Calling _get_look_data twice for the same Look only runs _run_look once."""
+        extractor._run_look = MagicMock(return_value=[{"a": 1}])
+
+        first = extractor._get_look_data(171)
+        second = extractor._get_look_data(171)
+
+        assert first == [{"a": 1}]
+        assert second == [{"a": 1}]
+        extractor._run_look.assert_called_once_with(171)
+
+    def test_different_looks_not_shared(self, extractor):
+        """Different Look IDs each trigger their own _run_look call."""
+        extractor._run_look = MagicMock(side_effect=lambda look_id: [{"id": look_id}])
+
+        extractor._get_look_data(171)
+        extractor._get_look_data(172)
+
+        assert extractor._run_look.call_count == 2
+
+
+class TestGetCustomerRow:
+    def test_finds_matching_customer(self, extractor):
+        extractor._look_cache[171] = [
+            {FIELD_CUSTOMER_ID: "cust-1", "val": 10},
+            {FIELD_CUSTOMER_ID: "cust-2", "val": 20},
+        ]
+
+        row = extractor._get_customer_row(171, "cust-1")
+        assert row == {FIELD_CUSTOMER_ID: "cust-1", "val": 10}
+
+    def test_returns_none_for_missing_customer(self, extractor):
+        extractor._look_cache[171] = [
+            {FIELD_CUSTOMER_ID: "cust-1", "val": 10},
+        ]
+
+        row = extractor._get_customer_row(171, "cust-999")
+        assert row is None
+
+    def test_custom_id_field(self, extractor):
+        extractor._look_cache[171] = [
+            {"other_id": "abc", "val": 5},
+        ]
+
+        row = extractor._get_customer_row(171, "abc", id_field="other_id")
+        assert row is not None
+        assert row["val"] == 5
+
+
+# ---------------------------------------------------------------------------
 # TestExtractPlatformValueScore
 # ---------------------------------------------------------------------------
 
+def _make_look_data(customer_id: str = "cust-1") -> dict[int, list[dict]]:
+    """Build a full set of Look data for one customer across all 7 Looks."""
+    return {
+        LOOK_BOOKINGS: [{
+            FIELD_CUSTOMER_ID: customer_id,
+            FIELD_CONVERSATIONS_BOOKING_PCT: 25.0,
+            FIELD_ARRIVAL_CIOL_PCT: 18.0,
+            FIELD_DIGITAL_KEY_PCT: 6.0,
+            FIELD_MOBILE_KEY_PCT: 4.0,
+            FIELD_TOTAL_BOOKINGS: 200,
+        }],
+        LOOK_ALLIN_USAGE: [{
+            FIELD_CUSTOMER_ID: customer_id,
+            FIELD_ALLIN_PCT: 22.0,
+        }],
+        LOOK_SENTIMENT: [{
+            FIELD_CUSTOMER_ID: customer_id,
+            FIELD_SENTIMENT_PCT: 15.0,
+        }],
+        LOOK_AUTOMATION: [{
+            FIELD_CUSTOMER_ID: customer_id,
+            FIELD_AUTOMATION_VALUE: "some_automation",
+        }],
+        LOOK_RESPONSE_TIME: [{
+            FIELD_CUSTOMER_ID: customer_id,
+            FIELD_RESPONSE_PCT: 80.0,
+        }],
+        LOOK_PAGE_VISITS: [{
+            FIELD_CUSTOMER_ID: customer_id,
+            FIELD_PAGE_VISITS_PER_ARRIVAL: 90.0,
+        }],
+        LOOK_ITINERARY: [{
+            FIELD_CUSTOMER_ID: customer_id,
+            FIELD_ITINERARY_VISITS: 12,
+        }],
+    }
+
+
 class TestExtractPlatformValueScore:
     def test_happy_path(self, extractor):
-        row = {
-            "platform_score.messaging_score": 85,
-            "platform_score.automations_score": 70,
-            "platform_score.contactless_score": 60,
-            "platform_score.requests_score": 45,
-            "platform_score.staff_adoption_score": 90,
+        """All Looks return data — all 9 metrics populated."""
+        extractor._look_cache = _make_look_data("cust-1")
+
+        result = extractor.extract_platform_value_score("cust-1")
+
+        assert result["positive_sentiment_pct"] == 15.0
+        assert result["response_before_target_pct"] == 80.0
+        assert result["allin_conversation_pct"] == 22.0
+        assert result["conversations_per_booking_pct"] == 25.0
+        assert result["arrival_ciol_pct"] == 18.0
+        assert result["digital_key_pct"] == 10.0  # 6.0 + 4.0
+        assert result["automation_active"] == 1
+        # itinerary_booking_pct = 12 / 200 * 100 = 6.0
+        assert result["itinerary_booking_pct"] == 6.0
+        assert result["page_visits_per_arrival"] == 90.0
+
+    def test_all_looks_empty_returns_all_none(self, extractor):
+        """No customer rows in any Look → all None (except automation_active=0)."""
+        extractor._run_look = MagicMock(return_value=[])
+
+        result = extractor.extract_platform_value_score("cust-1")
+
+        assert result["positive_sentiment_pct"] is None
+        assert result["response_before_target_pct"] is None
+        assert result["allin_conversation_pct"] is None
+        assert result["conversations_per_booking_pct"] is None
+        assert result["arrival_ciol_pct"] is None
+        assert result["digital_key_pct"] is None
+        assert result["automation_active"] == 0  # no row → 0
+        assert result["itinerary_booking_pct"] is None
+        assert result["page_visits_per_arrival"] is None
+
+    def test_look_failure_returns_none_for_affected_metrics(self, extractor):
+        """If a Look fetch fails, its metrics are None but others still work."""
+        # Pre-cache all Looks except sentiment — that one will raise
+        data = _make_look_data("cust-1")
+        del data[LOOK_SENTIMENT]
+        extractor._look_cache = data
+
+        def run_look_side_effect(look_id):
+            raise Exception("API timeout")
+
+        extractor._run_look = MagicMock(side_effect=run_look_side_effect)
+
+        result = extractor.extract_platform_value_score("cust-1")
+
+        # Sentiment should be None (Look not cached, _run_look raises)
+        assert result["positive_sentiment_pct"] is None
+        # Other cached metrics should still work
+        assert result["response_before_target_pct"] == 80.0
+        assert result["allin_conversation_pct"] == 22.0
+
+    def test_digital_key_sum(self, extractor):
+        """digital_key_pct = digital_key_pct + mobile_key_pct."""
+        extractor._look_cache = {
+            LOOK_BOOKINGS: [{
+                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_DIGITAL_KEY_PCT: 7.0,
+                FIELD_MOBILE_KEY_PCT: 3.5,
+            }],
         }
-        extractor._run_inline_query = MagicMock(return_value=[row])
+        # Empty Looks for others
+        extractor._run_look = MagicMock(return_value=[])
 
         result = extractor.extract_platform_value_score("cust-1")
+        assert result["digital_key_pct"] == 10.5
 
-        assert result["messaging"] == 85
-        assert result["automations"] == 70
-        assert result["contactless"] == 60
-        assert result["requests"] == 45
-        assert result["staff_adoption"] == 90
-
-    def test_query_failure_returns_all_none(self, extractor):
-        extractor._run_inline_query = MagicMock(side_effect=Exception("timeout"))
-
-        result = extractor.extract_platform_value_score("cust-1")
-
-        assert result["messaging"] is None
-        assert result["automations"] is None
-        assert result["contactless"] is None
-        assert result["requests"] is None
-        assert result["staff_adoption"] is None
-
-    def test_empty_result(self, extractor):
-        extractor._run_inline_query = MagicMock(return_value=[])
-
-        result = extractor.extract_platform_value_score("cust-1")
-
-        assert result["messaging"] is None
-        assert result["automations"] is None
-
-    def test_partial_pillars(self, extractor):
-        """Some pillars present, others missing from row."""
-        row = {
-            "platform_score.messaging_score": 80,
-            # others not present
+    def test_digital_key_one_none(self, extractor):
+        """If one key component is None, treat as 0."""
+        extractor._look_cache = {
+            LOOK_BOOKINGS: [{
+                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_DIGITAL_KEY_PCT: 8.0,
+                # FIELD_MOBILE_KEY_PCT not present → None
+            }],
         }
-        extractor._run_inline_query = MagicMock(return_value=[row])
+        extractor._run_look = MagicMock(return_value=[])
 
         result = extractor.extract_platform_value_score("cust-1")
+        assert result["digital_key_pct"] == 8.0
 
-        assert result["messaging"] == 80
-        assert result["automations"] is None
-        assert result["contactless"] is None
+    def test_digital_key_both_none(self, extractor):
+        """If both key components are None, digital_key_pct is None."""
+        extractor._look_cache = {
+            LOOK_BOOKINGS: [{
+                FIELD_CUSTOMER_ID: "cust-1",
+                # Neither FIELD_DIGITAL_KEY_PCT nor FIELD_MOBILE_KEY_PCT present
+            }],
+        }
+        extractor._run_look = MagicMock(return_value=[])
+
+        result = extractor.extract_platform_value_score("cust-1")
+        assert result["digital_key_pct"] is None
+
+    def test_automation_null_value_maps_to_zero(self, extractor):
+        """Automation Look row with null value → automation_active = 1 (row exists)."""
+        # The field exists but value is None — row present means active per spec:
+        # "null → 0, any value → 1". But get() returns None for the field.
+        # Actually re-reading spec: null → 0, any value → 1
+        extractor._look_cache = {
+            LOOK_AUTOMATION: [{
+                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_AUTOMATION_VALUE: None,
+            }],
+        }
+        extractor._run_look = MagicMock(return_value=[])
+
+        result = extractor.extract_platform_value_score("cust-1")
+        assert result["automation_active"] == 0
+
+    def test_automation_present_maps_to_one(self, extractor):
+        """Automation Look row with a value → automation_active = 1."""
+        extractor._look_cache = {
+            LOOK_AUTOMATION: [{
+                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_AUTOMATION_VALUE: "active",
+            }],
+        }
+        extractor._run_look = MagicMock(return_value=[])
+
+        result = extractor.extract_platform_value_score("cust-1")
+        assert result["automation_active"] == 1
+
+    def test_automation_no_row_maps_to_zero(self, extractor):
+        """Customer not found in automation Look → automation_active = 0."""
+        extractor._look_cache = {
+            LOOK_AUTOMATION: [{
+                FIELD_CUSTOMER_ID: "other-customer",
+                FIELD_AUTOMATION_VALUE: "something",
+            }],
+        }
+        extractor._run_look = MagicMock(return_value=[])
+
+        result = extractor.extract_platform_value_score("cust-1")
+        assert result["automation_active"] == 0
+
+    def test_itinerary_booking_pct_calculation(self, extractor):
+        """itinerary_booking_pct = itinerary_visits / total_bookings * 100."""
+        extractor._look_cache = {
+            LOOK_BOOKINGS: [{
+                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_TOTAL_BOOKINGS: 500,
+            }],
+            LOOK_ITINERARY: [{
+                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_ITINERARY_VISITS: 25,
+            }],
+        }
+        extractor._run_look = MagicMock(return_value=[])
+
+        result = extractor.extract_platform_value_score("cust-1")
+        assert result["itinerary_booking_pct"] == 5.0  # 25/500*100
+
+    def test_itinerary_zero_bookings_returns_none(self, extractor):
+        """Zero total_bookings → itinerary_booking_pct is None (avoid div by zero)."""
+        extractor._look_cache = {
+            LOOK_BOOKINGS: [{
+                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_TOTAL_BOOKINGS: 0,
+            }],
+            LOOK_ITINERARY: [{
+                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_ITINERARY_VISITS: 10,
+            }],
+        }
+        extractor._run_look = MagicMock(return_value=[])
+
+        result = extractor.extract_platform_value_score("cust-1")
+        assert result["itinerary_booking_pct"] is None
+
+    def test_look_caching_across_metrics(self, extractor):
+        """Look 171 (bookings) is used by multiple metrics — only fetched once."""
+        call_results = {
+            LOOK_BOOKINGS: [{
+                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_CONVERSATIONS_BOOKING_PCT: 20,
+                FIELD_TOTAL_BOOKINGS: 100,
+            }],
+            LOOK_ITINERARY: [{
+                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_ITINERARY_VISITS: 5,
+            }],
+        }
+
+        def run_look(look_id):
+            return call_results.get(look_id, [])
+
+        extractor._run_look = MagicMock(side_effect=run_look)
+
+        extractor.extract_platform_value_score("cust-1")
+
+        # Look 171 should only be called once even though used for bookings + itinerary
+        look_171_calls = [
+            c for c in extractor._run_look.call_args_list if c[0][0] == LOOK_BOOKINGS
+        ]
+        assert len(look_171_calls) == 1

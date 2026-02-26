@@ -93,7 +93,7 @@ class SalesforceLoader:
 
         # Platform value
         pvs = scoring_result.get("platform_value", {})
-        pvs_pillars = pvs.get("pillar_scores", {})
+        pvs_metrics = pvs.get("metric_scores", {})
 
         # Composite scores
         composite = scoring_result.get("composite", {})
@@ -121,12 +121,16 @@ class SalesforceLoader:
             "Adoption_Feature_Breadth__c": adoption_metrics.get("feature_breadth_pct"),
             "Adoption_Platform_Score__c": adoption_metrics.get("platform_score"),
             "Adoption_Platform_Trend__c": adoption_metrics.get("platform_score_trend"),
-            # Platform Value Score pillars
-            "PVS_Messaging__c": pvs_pillars.get("messaging"),
-            "PVS_Automations__c": pvs_pillars.get("automations"),
-            "PVS_Contactless__c": pvs_pillars.get("contactless"),
-            "PVS_Requests__c": pvs_pillars.get("requests"),
-            "PVS_Staff_Adoption__c": pvs_pillars.get("staff_adoption"),
+            # Platform Value Score metrics
+            "PVS_Sentiment__c": pvs_metrics.get("positive_sentiment_pct"),
+            "PVS_Response_Time__c": pvs_metrics.get("response_before_target_pct"),
+            "PVS_Allin_Usage__c": pvs_metrics.get("allin_conversation_pct"),
+            "PVS_Conversations_Booking__c": pvs_metrics.get("conversations_per_booking_pct"),
+            "PVS_Arrival_CIOL__c": pvs_metrics.get("arrival_ciol_pct"),
+            "PVS_Digital_Key__c": pvs_metrics.get("digital_key_pct"),
+            "PVS_Automation_Active__c": pvs_metrics.get("automation_active"),
+            "PVS_Itinerary_Booking__c": pvs_metrics.get("itinerary_booking_pct"),
+            "PVS_Page_Visits__c": pvs_metrics.get("page_visits_per_arrival"),
             # Dimension-level scores
             "Support_Health_Score__c": support.get("score"),
             "Financial_Contract_Score__c": financial.get("score"),

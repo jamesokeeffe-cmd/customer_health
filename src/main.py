@@ -28,7 +28,7 @@ from src.extractors.looker import LookerExtractor
 from src.extractors.salesforce import SalesforceExtractor
 from src.loaders.salesforce import SalesforceLoader, write_dry_run_csv
 from src.scoring.composite import classify_tier, compute_churn_risk, compute_health_score
-from src.scoring.dimensions import score_dimension, score_platform_value
+from src.scoring.dimensions import score_dimension
 from src.scoring.qualitative import apply_qualitative_modifier
 
 logger = logging.getLogger("health_score")
@@ -312,10 +312,12 @@ class HealthScoreOrchestrator:
                 segment=segment,
             )
 
-        # Platform Value Score
-        pvs_result = score_platform_value(
-            pillar_scores=pvs_raw,
-            pillar_weights=weights["platform_value"],
+        # Platform Value Score (normalised via score_dimension like other dimensions)
+        pvs_result = score_dimension(
+            raw_metrics=pvs_raw,
+            metric_weights=weights["platform_value"],
+            thresholds=thresholds["platform_value"],
+            segment=segment,
         )
 
         # Churn Risk composite

@@ -41,10 +41,14 @@ relationship_expansion:
   exec_engagement: 0.15
   expansion_signals: 0.20
 
-# Platform Value Score sub-pillars (existing AXP calculation)
+# Platform Value Score — individual Look-based metrics
 platform_value:
-  messaging: 0.50
-  automations: 0.20
-  contactless: 0.20
-  requests: 0.05
-  staff_adoption: 0.05
+  positive_sentiment_pct: 0.10
+  response_before_target_pct: 0.20
+  allin_conversation_pct: 0.20
+  conversations_per_booking_pct: 0.05
+  arrival_ciol_pct: 0.10
+  digital_key_pct: 0.10
+  automation_active: 0.10
+  itinerary_booking_pct: 0.05
+  page_visits_per_arrival: 0.05

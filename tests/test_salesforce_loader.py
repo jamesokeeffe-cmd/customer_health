@@ -84,12 +84,16 @@ def _make_scoring_result(
         },
         "platform_value": {
             "score": pvs_score,
-            "pillar_scores": {
-                "messaging": 80,
-                "automations": 60,
-                "contactless": 55,
-                "requests": 40,
-                "staff_adoption": 75,
+            "metric_scores": {
+                "positive_sentiment_pct": 80,
+                "response_before_target_pct": 90,
+                "allin_conversation_pct": 75,
+                "conversations_per_booking_pct": 60,
+                "arrival_ciol_pct": 70,
+                "digital_key_pct": 85,
+                "automation_active": 100,
+                "itinerary_booking_pct": 55,
+                "page_visits_per_arrival": 65,
             },
             "coverage": 1.0,
         },
@@ -140,7 +144,7 @@ class TestBuildRecord:
         assert record["Final_Score__c"] == 70.0
         assert record["Health_Tier__c"] == "At Risk"
         assert record["Support_P1P2_Volume__c"] == 80
-        assert record["PVS_Messaging__c"] == 80
+        assert record["PVS_Sentiment__c"] == 80
         assert record["Qual_Active_Critical__c"] == 1
         assert record["Qual_Override_Active__c"] is True
 

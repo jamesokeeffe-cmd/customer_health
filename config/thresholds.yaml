@@ -289,6 +289,110 @@ relationship_expansion:
       red: 0
 
 # ---------------------------------------------------------------------------
+# Platform Value Score — Look-based metrics
+# ---------------------------------------------------------------------------
+platform_value:
+  positive_sentiment_pct:
+    lower_is_better: false
+    paid:
+      green: 12
+      yellow: 6
+      red: 2
+    standard:
+      green: 12
+      yellow: 6
+      red: 2
+
+  response_before_target_pct:
+    lower_is_better: false
+    paid:
+      green: 75
+      yellow: 50
+      red: 25
+    standard:
+      green: 75
+      yellow: 50
+      red: 25
+
+  allin_conversation_pct:
+    lower_is_better: false
+    paid:
+      green: 20
+      yellow: 10
+      red: 3
+    standard:
+      green: 20
+      yellow: 10
+      red: 3
+
+  conversations_per_booking_pct:
+    lower_is_better: false
+    paid:
+      green: 22
+      yellow: 12
+      red: 5
+    standard:
+      green: 22
+      yellow: 12
+      red: 5
+
+  arrival_ciol_pct:
+    lower_is_better: false
+    paid:
+      green: 15
+      yellow: 8
+      red: 2
+    standard:
+      green: 15
+      yellow: 8
+      red: 2
+
+  digital_key_pct:
+    lower_is_better: false
+    paid:
+      green: 10
+      yellow: 5
+      red: 1
+    standard:
+      green: 10
+      yellow: 5
+      red: 1
+
+  automation_active:
+    # Binary: 0 = inactive, 1 = active
+    lower_is_better: false
+    paid:
+      green: 1
+      yellow: 0.5
+      red: 0
+    standard:
+      green: 1
+      yellow: 0.5
+      red: 0
+
+  itinerary_booking_pct:
+    lower_is_better: false
+    paid:
+      green: 5
+      yellow: 2
+      red: 0.5
+    standard:
+      green: 5
+      yellow: 2
+      red: 0.5
+
+  page_visits_per_arrival:
+    lower_is_better: false
+    paid:
+      green: 85
+      yellow: 50
+      red: 20
+    standard:
+      green: 85
+      yellow: 50
+      red: 20
+
+# ---------------------------------------------------------------------------
 # Qualitative Signal Modifier (caps, not dimension scores)
 # ---------------------------------------------------------------------------
 qualitative_modifier:
