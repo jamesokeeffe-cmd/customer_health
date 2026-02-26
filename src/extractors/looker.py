@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Looker API extractor for Adoption & Engagement metrics and Platform Value Score.
 
 Queries Looker Explores/Looks for:
