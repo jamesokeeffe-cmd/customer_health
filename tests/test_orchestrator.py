@@ -2,12 +2,13 @@ from __future__ import annotations
 
 """Tests for HealthScoreOrchestrator (init, score_account, run)."""
 
+import logging
 import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.main import HealthScoreOrchestrator
+from src.main import HealthScoreOrchestrator, load_account_mapping
 
 
 @pytest.fixture
@@ -457,3 +458,70 @@ class TestRun:
 
         assert "execution_time_seconds" in summary
         assert isinstance(summary["execution_time_seconds"], float)
+
+    def test_empty_mapping_logs_warning(self, orchestrator, caplog):
+        orchestrator.account_mapping = []
+
+        with caplog.at_level(logging.WARNING, logger="health_score"):
+            orchestrator.run(scoring_period="2025-02")
+
+        assert any("Account mapping is empty" in msg for msg in caplog.messages)
+
+
+# ---------------------------------------------------------------------------
+# TestLoadAccountMapping
+# ---------------------------------------------------------------------------
+
+class TestLoadAccountMapping:
+    def test_valid_csv(self, tmp_path):
+        csv_file = tmp_path / "mapping.csv"
+        csv_file.write_text(
+            "sf_account_id,intercom_company_id,looker_customer_id,account_name,segment\n"
+            "001ABC000000000,ic-1,lk-1,Acme,paid\n"
+        )
+        rows = load_account_mapping(str(csv_file))
+        assert len(rows) == 1
+        assert rows[0]["sf_account_id"] == "001ABC000000000"
+
+    def test_valid_csv_with_extra_columns(self, tmp_path):
+        csv_file = tmp_path / "mapping.csv"
+        csv_file.write_text(
+            "sf_account_id,intercom_company_id,looker_customer_id,account_name,segment,jira_project_key\n"
+            "001ABC000000000,ic-1,lk-1,Acme,paid,ENG\n"
+        )
+        rows = load_account_mapping(str(csv_file))
+        assert len(rows) == 1
+        assert rows[0]["jira_project_key"] == "ENG"
+
+    def test_headers_only_returns_empty_list(self, tmp_path):
+        csv_file = tmp_path / "mapping.csv"
+        csv_file.write_text(
+            "sf_account_id,intercom_company_id,looker_customer_id,account_name,segment\n"
+        )
+        rows = load_account_mapping(str(csv_file))
+        assert rows == []
+
+    def test_missing_required_column_raises(self, tmp_path):
+        csv_file = tmp_path / "mapping.csv"
+        csv_file.write_text(
+            "sf_account_id,account_name,segment\n"
+            "001ABC000000000,Acme,paid\n"
+        )
+        with pytest.raises(ValueError, match="missing required columns"):
+            load_account_mapping(str(csv_file))
+
+    def test_empty_file_raises(self, tmp_path):
+        csv_file = tmp_path / "mapping.csv"
+        csv_file.write_text("")
+        with pytest.raises(ValueError, match="empty or unreadable"):
+            load_account_mapping(str(csv_file))
+
+    def test_error_message_lists_missing_columns(self, tmp_path):
+        csv_file = tmp_path / "mapping.csv"
+        csv_file.write_text("sf_account_id,account_name\n")
+        with pytest.raises(ValueError, match="intercom_company_id") as exc_info:
+            load_account_mapping(str(csv_file))
+        # All three missing columns should be mentioned
+        msg = str(exc_info.value)
+        assert "looker_customer_id" in msg
+        assert "segment" in msg

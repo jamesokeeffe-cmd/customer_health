@@ -39,15 +39,36 @@ def load_yaml(path: str) -> dict:
         return yaml.safe_load(f)
 
 
+_REQUIRED_CSV_COLUMNS = {
+    "sf_account_id",
+    "intercom_company_id",
+    "looker_customer_id",
+    "account_name",
+    "segment",
+}
+
+
 def load_account_mapping(path: str) -> list[dict]:
     """Load cross-system account ID mapping from CSV.
 
     Expected columns: sf_account_id, intercom_company_id, looker_customer_id,
                       account_name, segment
+
+    Raises:
+        ValueError: If required columns are missing from the CSV header.
     """
     rows = []
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            raise ValueError(f"Account mapping CSV is empty or unreadable: {path}")
+        actual = set(reader.fieldnames)
+        missing = _REQUIRED_CSV_COLUMNS - actual
+        if missing:
+            raise ValueError(
+                f"Account mapping CSV missing required columns: {sorted(missing)}. "
+                f"Found: {sorted(actual)}"
+            )
         for row in reader:
             rows.append(row)
     return rows
@@ -406,6 +427,13 @@ class HealthScoreOrchestrator:
         """
         if not scoring_period:
             scoring_period = datetime.now(timezone.utc).strftime("%Y-%m")
+
+        if not self.account_mapping:
+            logger.warning(
+                "Account mapping is empty — no accounts to score. "
+                "Populate %s with account rows.",
+                self.config_dir / "account_mapping.csv",
+            )
 
         start_time = time.time()
         results = []
