@@ -48,9 +48,11 @@ ETL pipeline that calculates customer health scores by extracting data from 4 so
 
 ```
 1. Extract raw metrics from each source
-   intercom → {total_conversations, p1_p2_pct, median_first_response_seconds, ...}
-   jira     → {open_bugs, reopened_bugs, critical_bugs, avg_resolution_days, ...}
-   looker   → {dau, mau, feature_breadth, login_frequency, ...}
+   intercom → {p1_p2_volume, first_response_minutes, close_time_hours, reopen_rate_pct, ...}
+   jira     → {open_bugs_total, open_bugs_p1_p2}
+   looker   → adoption: {page_visits_per_arrival, feature_breadth_pct, platform_score, ...}
+              pvs: {positive_sentiment_pct, response_before_target_pct, allin_conversation_pct,
+                    digital_key_pct, automation_active, ...} (9 metrics from saved Looks 171-177)
    salesforce → financial: {days_to_renewal, payment_health, arr_trajectory_pct, ...}
                relationship: {qbr_attendance, champion_stability, ...}
                qualitative: {critical_signals, moderate_signals, ...}
@@ -59,11 +61,14 @@ ETL pipeline that calculates customer health scores by extracting data from 4 so
    normalise_metric(value, green, yellow, red, lower_is_better) → 0-100 or None
 
 3. Score each dimension (weighted metric average)
-   score_dimension(normalised_metrics, metric_weights, segment) → {score, coverage, ...}
+   score_dimension(raw_metrics, metric_weights, thresholds, segment) → {score, coverage, ...}
+   Churn Risk dimensions:
    - Support Health (30%)
    - Financial/Contract (30%)
    - Adoption/Engagement (25%)
    - Relationship/Expansion (15%)
+   Platform Value Score:
+   - 9 individual metrics normalised and weighted via score_dimension() (same code path)
 
 4. Compute composites
    compute_churn_risk(dimension_scores, dimension_weights) → {score, coverage_pct, ...}

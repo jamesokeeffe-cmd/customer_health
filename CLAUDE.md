@@ -24,6 +24,7 @@ Config:       config/ — weights.yaml, thresholds.yaml, account_mapping.csv
 
 - **Health Score** = 60% Churn Risk + 40% Platform Value Score
 - **Churn Risk** = 30% Support + 30% Financial + 25% Adoption + 15% Relationship
+- **Platform Value Score** = 9 individual metrics from Looker saved Looks (171-177), normalised and weighted via `score_dimension()` — same code path as Churn Risk dimensions
 - Each metric normalised to 0-100 via green/yellow/red thresholds (segment-specific: paid vs standard)
 - Missing metrics/dimensions handled by proportional weight redistribution
 - Qualitative signals (Churn_Signal__c) can cap the final score downward

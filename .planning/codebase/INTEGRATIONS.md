@@ -64,17 +64,28 @@ Salesforce──┘
 **Base URL:** `{LOOKER_BASE_URL}`
 
 **SDK methods used:**
-- `create_query()` — Build inline queries against models/views
+- `create_query()` — Build inline queries against models/views (adoption metrics)
 - `run_query()` — Execute queries, return JSON
-- `run_look()` — Execute saved Looks by ID
+- `run_look()` — Execute saved Looks by ID (PVS metrics)
 
-**Models/Views (hardcoded defaults):**
+**Inline queries (adoption metrics):**
 - Model: `alliants`
-- Views: `user_sessions`, `feature_usage`, `platform_metrics`
+- Views: `platform_score`, `feature_usage`
+
+**Saved Looks (Platform Value Score metrics):**
+- Look 171 (Bookings): `conversations_per_booking_pct`, `arrival_ciol_pct`, `digital_key_pct`, `total_bookings`
+- Look 172 (All-in usage): `allin_conversation_pct`
+- Look 173 (Sentiment): `positive_sentiment_pct`
+- Look 174 (Automation): `automation_active` (null → 0, any value → 1)
+- Look 175 (Response time): `response_before_target_pct`
+- Look 176 (Page visits): `page_visits_per_arrival`
+- Look 177 (Itinerary): `itinerary_visits` (combined with Look 171 bookings for `itinerary_booking_pct`)
+
+Look results are cached per-run (`_look_cache`) since each Look returns all customers.
 
 **Metrics extracted:**
-- Adoption: `dau`, `mau`, `feature_breadth`, `login_frequency`
-- Platform Value Score: pillar scores across usage dimensions
+- Adoption: `page_visits_per_arrival`, `page_visits_per_arrival_trend`, `feature_breadth_pct`, `platform_score`, `platform_score_trend`
+- Platform Value Score: 9 individual metrics normalised via `score_dimension()` (same path as Churn Risk dimensions)
 
 ---
 

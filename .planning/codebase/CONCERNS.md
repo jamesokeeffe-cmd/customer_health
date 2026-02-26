@@ -6,7 +6,7 @@
 
 ## Summary
 
-The codebase is architecturally sound with good test coverage (181 tests) and clean separation of concerns. Primary risks are security (SOQL injection), operational (no retries, broad exception catching), and data quality (empty account mapping, unvalidated config).
+The codebase is architecturally sound with good test coverage (194 tests) and clean separation of concerns. Primary risks are security (SOQL injection), operational (no retries, broad exception catching), and data quality (empty account mapping, unvalidated config).
 
 ---
 
@@ -90,11 +90,11 @@ No schema validation for `weights.yaml` or `thresholds.yaml`. Missing keys, typo
 
 **Fix:** Set timeout parameter on client init.
 
-### 9. Hardcoded Looker Model/View Names
+### 9. Hardcoded Looker Model/View Names and Look IDs
 
 **File:** `src/extractors/looker.py`
 
-Model name `alliants` and view names are hardcoded defaults. Different Looker instances would fail silently.
+Model name `alliants`, view names, and saved Look IDs (171-177) are hardcoded defaults. Different Looker instances would fail silently. Look field name constants are also placeholders pending verification against actual Look output.
 
 **Fix:** Move to config or environment variables.
 

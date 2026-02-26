@@ -7,7 +7,7 @@
 ## Overview
 
 - **Framework:** pytest with `unittest.mock`
-- **Total tests:** 181 across 9 test files
+- **Total tests:** 194 across 9 test files
 - **External SDKs:** NOT installed locally — mocked via `conftest.py`
 - **Run:** `python3 -m pytest tests/ -v`
 
@@ -33,7 +33,7 @@ This allows all extractor/loader tests to run without installing `simple_salesfo
 | `test_integration.py` | ~15 | No | End-to-end worked examples from design docs |
 | `test_intercom_extractor.py` | ~10 | Yes | Intercom API parsing, pagination, metric aggregation |
 | `test_jira_extractor.py` | ~15 | Yes | Jira JQL, pagination, bug metric aggregation |
-| `test_looker_extractor.py` | ~20 | Yes | Looker SDK queries, JSON parsing, adoption metrics |
+| `test_looker_extractor.py` | ~30 | Yes | Looker SDK queries, JSON parsing, adoption metrics, PVS Look-based extraction, Look caching |
 | `test_salesforce_extractor.py` | ~25 | Yes | SOQL queries, financial/relationship/qualitative extraction |
 | `test_salesforce_loader.py` | ~15 | Yes | Health_Score__c upsert, CSV export |
 | `test_orchestrator.py` | ~20 | Yes | Orchestrator init, credential loading, scoring flow |
@@ -74,7 +74,7 @@ Each extractor test file defines helpers to build realistic mock API responses:
 - `test_intercom_extractor.py`: `_make_conversation()`, `_mock_search_response()`, `_mock_get_response()`
 - `test_salesforce_extractor.py`: `_query_result(records, total)`, `_account_record(arr, tier)`
 - `test_jira_extractor.py`: `_make_issue()`, `_mock_search_response()`
-- `test_looker_extractor.py`: Mock SDK `create_query()` / `run_query()` return values
+- `test_looker_extractor.py`: Mock SDK `create_query()` / `run_query()` return values; `_look_cache` pre-populated for PVS tests
 
 ## Mock Setup Pattern
 
