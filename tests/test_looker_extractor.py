@@ -12,11 +12,17 @@ from src.extractors.looker import (
     FIELD_ARRIVAL_CIOL_PCT,
     FIELD_AUTOMATION_VALUE,
     FIELD_CONVERSATIONS_BOOKING_PCT,
-    FIELD_CUSTOMER_ID,
     FIELD_DIGITAL_KEY_PCT,
+    FIELD_ID_ALLIN,
+    FIELD_ID_AUTOMATION,
+    FIELD_ID_BOOKINGS,
+    FIELD_ID_ITINERARY,
+    FIELD_ID_PAGE_VISITS,
+    FIELD_ID_RESPONSE,
+    FIELD_ID_SENTIMENT,
     FIELD_ITINERARY_VISITS,
     FIELD_MOBILE_KEY_PCT,
-    FIELD_PAGE_VISITS_PER_ARRIVAL,
+    FIELD_PAGE_VISITS_RAW,
     FIELD_RESPONSE_PCT,
     FIELD_SENTIMENT_PCT,
     FIELD_TOTAL_BOOKINGS,
@@ -286,19 +292,19 @@ class TestGetLookData:
 class TestGetCustomerRow:
     def test_finds_matching_customer(self, extractor):
         extractor._look_cache[171] = [
-            {FIELD_CUSTOMER_ID: "cust-1", "val": 10},
-            {FIELD_CUSTOMER_ID: "cust-2", "val": 20},
+            {FIELD_ID_BOOKINGS: "cust-1", "val": 10},
+            {FIELD_ID_BOOKINGS: "cust-2", "val": 20},
         ]
 
-        row = extractor._get_customer_row(171, "cust-1")
-        assert row == {FIELD_CUSTOMER_ID: "cust-1", "val": 10}
+        row = extractor._get_customer_row(171, "cust-1", id_field=FIELD_ID_BOOKINGS)
+        assert row == {FIELD_ID_BOOKINGS: "cust-1", "val": 10}
 
     def test_returns_none_for_missing_customer(self, extractor):
         extractor._look_cache[171] = [
-            {FIELD_CUSTOMER_ID: "cust-1", "val": 10},
+            {FIELD_ID_BOOKINGS: "cust-1", "val": 10},
         ]
 
-        row = extractor._get_customer_row(171, "cust-999")
+        row = extractor._get_customer_row(171, "cust-999", id_field=FIELD_ID_BOOKINGS)
         assert row is None
 
     def test_custom_id_field(self, extractor):
@@ -316,38 +322,41 @@ class TestGetCustomerRow:
 # ---------------------------------------------------------------------------
 
 def _make_look_data(customer_id: str = "cust-1") -> dict[int, list[dict]]:
-    """Build a full set of Look data for one customer across all 7 Looks."""
+    """Build a full set of Look data for one customer across all 7 Looks.
+
+    Values use the actual Looker format: decimals (0.0-1.0) for percentages.
+    """
     return {
         LOOK_BOOKINGS: [{
-            FIELD_CUSTOMER_ID: customer_id,
-            FIELD_CONVERSATIONS_BOOKING_PCT: 25.0,
-            FIELD_ARRIVAL_CIOL_PCT: 18.0,
-            FIELD_DIGITAL_KEY_PCT: 6.0,
-            FIELD_MOBILE_KEY_PCT: 4.0,
+            FIELD_ID_BOOKINGS: customer_id,
+            FIELD_CONVERSATIONS_BOOKING_PCT: 0.25,     # 25%
+            FIELD_ARRIVAL_CIOL_PCT: 0.18,              # 18%
+            FIELD_DIGITAL_KEY_PCT: 0.06,               # Apple Wallet 6%
+            FIELD_MOBILE_KEY_PCT: 0.04,                # BLE key 4%
             FIELD_TOTAL_BOOKINGS: 200,
         }],
         LOOK_ALLIN_USAGE: [{
-            FIELD_CUSTOMER_ID: customer_id,
-            FIELD_ALLIN_PCT: 22.0,
+            FIELD_ID_ALLIN: customer_id,
+            FIELD_ALLIN_PCT: 0.22,                     # 22%
         }],
         LOOK_SENTIMENT: [{
-            FIELD_CUSTOMER_ID: customer_id,
-            FIELD_SENTIMENT_PCT: 15.0,
+            FIELD_ID_SENTIMENT: customer_id,
+            FIELD_SENTIMENT_PCT: 0.15,                 # 15%
         }],
         LOOK_AUTOMATION: [{
-            FIELD_CUSTOMER_ID: customer_id,
-            FIELD_AUTOMATION_VALUE: "some_automation",
+            FIELD_ID_AUTOMATION: customer_id,
+            FIELD_AUTOMATION_VALUE: "Sendgrid",
         }],
         LOOK_RESPONSE_TIME: [{
-            FIELD_CUSTOMER_ID: customer_id,
-            FIELD_RESPONSE_PCT: 80.0,
+            FIELD_ID_RESPONSE: customer_id,
+            FIELD_RESPONSE_PCT: 0.80,                  # 80%
         }],
         LOOK_PAGE_VISITS: [{
-            FIELD_CUSTOMER_ID: customer_id,
-            FIELD_PAGE_VISITS_PER_ARRIVAL: 90.0,
+            FIELD_ID_PAGE_VISITS: customer_id,
+            FIELD_PAGE_VISITS_RAW: 18000,              # raw total visits
         }],
         LOOK_ITINERARY: [{
-            FIELD_CUSTOMER_ID: customer_id,
+            FIELD_ID_ITINERARY: customer_id,
             FIELD_ITINERARY_VISITS: 12,
         }],
     }
@@ -360,15 +369,16 @@ class TestExtractPlatformValueScore:
 
         result = extractor.extract_platform_value_score("cust-1")
 
-        assert result["positive_sentiment_pct"] == 15.0
-        assert result["response_before_target_pct"] == 80.0
-        assert result["allin_conversation_pct"] == 22.0
-        assert result["conversations_per_booking_pct"] == 25.0
-        assert result["arrival_ciol_pct"] == 18.0
-        assert result["digital_key_pct"] == 10.0  # 6.0 + 4.0
+        assert result["positive_sentiment_pct"] == 15.0       # 0.15 * 100
+        assert result["response_before_target_pct"] == 80.0   # 0.80 * 100
+        assert result["allin_conversation_pct"] == 22.0        # 0.22 * 100
+        assert result["conversations_per_booking_pct"] == 25.0 # 0.25 * 100
+        assert result["arrival_ciol_pct"] == 18.0              # 0.18 * 100
+        assert result["digital_key_pct"] == 10.0               # (0.06 + 0.04) * 100
         assert result["automation_active"] == 1
         # itinerary_booking_pct = 12 / 200 * 100 = 6.0
         assert result["itinerary_booking_pct"] == 6.0
+        # page_visits_per_arrival = 18000 / 200 = 90.0
         assert result["page_visits_per_arrival"] == 90.0
 
     def test_all_looks_empty_returns_all_none(self, extractor):
@@ -408,40 +418,39 @@ class TestExtractPlatformValueScore:
         assert result["allin_conversation_pct"] == 22.0
 
     def test_digital_key_sum(self, extractor):
-        """digital_key_pct = digital_key_pct + mobile_key_pct."""
+        """digital_key_pct = (Apple Wallet + BLE mobile key) * 100."""
         extractor._look_cache = {
             LOOK_BOOKINGS: [{
-                FIELD_CUSTOMER_ID: "cust-1",
-                FIELD_DIGITAL_KEY_PCT: 7.0,
-                FIELD_MOBILE_KEY_PCT: 3.5,
+                FIELD_ID_BOOKINGS: "cust-1",
+                FIELD_DIGITAL_KEY_PCT: 0.07,   # 7%
+                FIELD_MOBILE_KEY_PCT: 0.035,   # 3.5%
             }],
         }
-        # Empty Looks for others
         extractor._run_look = MagicMock(return_value=[])
 
         result = extractor.extract_platform_value_score("cust-1")
-        assert result["digital_key_pct"] == 10.5
+        assert result["digital_key_pct"] == 10.5  # (0.07 + 0.035) * 100
 
     def test_digital_key_one_none(self, extractor):
         """If one key component is None, treat as 0."""
         extractor._look_cache = {
             LOOK_BOOKINGS: [{
-                FIELD_CUSTOMER_ID: "cust-1",
-                FIELD_DIGITAL_KEY_PCT: 8.0,
+                FIELD_ID_BOOKINGS: "cust-1",
+                FIELD_DIGITAL_KEY_PCT: 0.08,
                 # FIELD_MOBILE_KEY_PCT not present → None
             }],
         }
         extractor._run_look = MagicMock(return_value=[])
 
         result = extractor.extract_platform_value_score("cust-1")
-        assert result["digital_key_pct"] == 8.0
+        assert result["digital_key_pct"] == 8.0  # 0.08 * 100
 
     def test_digital_key_both_none(self, extractor):
         """If both key components are None, digital_key_pct is None."""
         extractor._look_cache = {
             LOOK_BOOKINGS: [{
-                FIELD_CUSTOMER_ID: "cust-1",
-                # Neither FIELD_DIGITAL_KEY_PCT nor FIELD_MOBILE_KEY_PCT present
+                FIELD_ID_BOOKINGS: "cust-1",
+                # Neither key field present
             }],
         }
         extractor._run_look = MagicMock(return_value=[])
@@ -450,13 +459,10 @@ class TestExtractPlatformValueScore:
         assert result["digital_key_pct"] is None
 
     def test_automation_null_value_maps_to_zero(self, extractor):
-        """Automation Look row with null value → automation_active = 1 (row exists)."""
-        # The field exists but value is None — row present means active per spec:
-        # "null → 0, any value → 1". But get() returns None for the field.
-        # Actually re-reading spec: null → 0, any value → 1
+        """Automation Look row with null delivery_method → automation_active = 0."""
         extractor._look_cache = {
             LOOK_AUTOMATION: [{
-                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_ID_AUTOMATION: "cust-1",
                 FIELD_AUTOMATION_VALUE: None,
             }],
         }
@@ -466,11 +472,11 @@ class TestExtractPlatformValueScore:
         assert result["automation_active"] == 0
 
     def test_automation_present_maps_to_one(self, extractor):
-        """Automation Look row with a value → automation_active = 1."""
+        """Automation Look row with a delivery method → automation_active = 1."""
         extractor._look_cache = {
             LOOK_AUTOMATION: [{
-                FIELD_CUSTOMER_ID: "cust-1",
-                FIELD_AUTOMATION_VALUE: "active",
+                FIELD_ID_AUTOMATION: "cust-1",
+                FIELD_AUTOMATION_VALUE: "Sendgrid",
             }],
         }
         extractor._run_look = MagicMock(return_value=[])
@@ -482,8 +488,8 @@ class TestExtractPlatformValueScore:
         """Customer not found in automation Look → automation_active = 0."""
         extractor._look_cache = {
             LOOK_AUTOMATION: [{
-                FIELD_CUSTOMER_ID: "other-customer",
-                FIELD_AUTOMATION_VALUE: "something",
+                FIELD_ID_AUTOMATION: "other-customer",
+                FIELD_AUTOMATION_VALUE: "Sendgrid",
             }],
         }
         extractor._run_look = MagicMock(return_value=[])
@@ -495,11 +501,11 @@ class TestExtractPlatformValueScore:
         """itinerary_booking_pct = itinerary_visits / total_bookings * 100."""
         extractor._look_cache = {
             LOOK_BOOKINGS: [{
-                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_ID_BOOKINGS: "cust-1",
                 FIELD_TOTAL_BOOKINGS: 500,
             }],
             LOOK_ITINERARY: [{
-                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_ID_ITINERARY: "cust-1",
                 FIELD_ITINERARY_VISITS: 25,
             }],
         }
@@ -512,11 +518,11 @@ class TestExtractPlatformValueScore:
         """Zero total_bookings → itinerary_booking_pct is None (avoid div by zero)."""
         extractor._look_cache = {
             LOOK_BOOKINGS: [{
-                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_ID_BOOKINGS: "cust-1",
                 FIELD_TOTAL_BOOKINGS: 0,
             }],
             LOOK_ITINERARY: [{
-                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_ID_ITINERARY: "cust-1",
                 FIELD_ITINERARY_VISITS: 10,
             }],
         }
@@ -525,17 +531,55 @@ class TestExtractPlatformValueScore:
         result = extractor.extract_platform_value_score("cust-1")
         assert result["itinerary_booking_pct"] is None
 
+    def test_page_visits_per_arrival_divides_by_bookings(self, extractor):
+        """page_visits_per_arrival = raw_visits / total_bookings."""
+        extractor._look_cache = {
+            LOOK_BOOKINGS: [{
+                FIELD_ID_BOOKINGS: "cust-1",
+                FIELD_TOTAL_BOOKINGS: 1000,
+            }],
+            LOOK_PAGE_VISITS: [{
+                FIELD_ID_PAGE_VISITS: "cust-1",
+                FIELD_PAGE_VISITS_RAW: 5000,
+            }],
+        }
+        extractor._run_look = MagicMock(return_value=[])
+
+        result = extractor.extract_platform_value_score("cust-1")
+        assert result["page_visits_per_arrival"] == 5.0  # 5000/1000
+
+    def test_page_visits_zero_bookings_returns_none(self, extractor):
+        """Zero bookings → page_visits_per_arrival is None."""
+        extractor._look_cache = {
+            LOOK_BOOKINGS: [{
+                FIELD_ID_BOOKINGS: "cust-1",
+                FIELD_TOTAL_BOOKINGS: 0,
+            }],
+            LOOK_PAGE_VISITS: [{
+                FIELD_ID_PAGE_VISITS: "cust-1",
+                FIELD_PAGE_VISITS_RAW: 100,
+            }],
+        }
+        extractor._run_look = MagicMock(return_value=[])
+
+        result = extractor.extract_platform_value_score("cust-1")
+        assert result["page_visits_per_arrival"] is None
+
     def test_look_caching_across_metrics(self, extractor):
         """Look 171 (bookings) is used by multiple metrics — only fetched once."""
         call_results = {
             LOOK_BOOKINGS: [{
-                FIELD_CUSTOMER_ID: "cust-1",
-                FIELD_CONVERSATIONS_BOOKING_PCT: 20,
+                FIELD_ID_BOOKINGS: "cust-1",
+                FIELD_CONVERSATIONS_BOOKING_PCT: 0.20,
                 FIELD_TOTAL_BOOKINGS: 100,
             }],
             LOOK_ITINERARY: [{
-                FIELD_CUSTOMER_ID: "cust-1",
+                FIELD_ID_ITINERARY: "cust-1",
                 FIELD_ITINERARY_VISITS: 5,
+            }],
+            LOOK_PAGE_VISITS: [{
+                FIELD_ID_PAGE_VISITS: "cust-1",
+                FIELD_PAGE_VISITS_RAW: 300,
             }],
         }
 
@@ -546,7 +590,7 @@ class TestExtractPlatformValueScore:
 
         extractor.extract_platform_value_score("cust-1")
 
-        # Look 171 should only be called once even though used for bookings + itinerary
+        # Look 171 should only be called once even though used for bookings + itinerary + page visits
         look_171_calls = [
             c for c in extractor._run_look.call_args_list if c[0][0] == LOOK_BOOKINGS
         ]
