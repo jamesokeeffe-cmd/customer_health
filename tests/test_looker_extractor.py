@@ -72,7 +72,9 @@ class TestRunInlineQuery:
         )
 
         extractor.sdk.create_query.assert_called_once()
-        extractor.sdk.run_query.assert_called_once_with(query_id=99, result_format="json")
+        extractor.sdk.run_query.assert_called_once_with(
+            query_id=99, result_format="json", transport_options={"timeout": 300},
+        )
         assert result == [{"a": 1}]
 
     def test_parses_json_string(self, extractor):
@@ -115,7 +117,9 @@ class TestRunInlineQuery:
         call_kwargs = extractor.sdk.create_query.call_args[1]
         assert "body" in call_kwargs
         # Verify run_query used the returned query id
-        extractor.sdk.run_query.assert_called_once_with(query_id=42, result_format="json")
+        extractor.sdk.run_query.assert_called_once_with(
+            query_id=42, result_format="json", transport_options={"timeout": 300},
+        )
 
 
 # ---------------------------------------------------------------------------

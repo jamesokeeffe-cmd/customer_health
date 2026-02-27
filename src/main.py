@@ -280,11 +280,13 @@ class HealthScoreOrchestrator:
         looker_base_url = os.environ.get("LOOKER_BASE_URL")
         looker_client_id = os.environ.get("LOOKER_CLIENT_ID")
         looker_client_secret = os.environ.get("LOOKER_CLIENT_SECRET")
+        looker_timeout = int(os.environ.get("LOOKERSDK_TIMEOUT", "300"))
         if looker_base_url and looker_client_id and looker_client_secret:
             self.looker = LookerExtractor.from_credentials(
                 base_url=looker_base_url,
                 client_id=looker_client_id,
                 client_secret=looker_client_secret,
+                timeout=looker_timeout,
             )
             available.append("Looker")
 

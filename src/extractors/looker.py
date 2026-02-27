@@ -48,7 +48,8 @@ FIELD_TOTAL_BOOKINGS = "total_bookings"
 
 
 class LookerExtractor:
-    def __init__(self, base_url: str, client_id: str, client_secret: str):
+    def __init__(self, base_url: str, client_id: str, client_secret: str, timeout: int = 300):
+        self.timeout = timeout
         self.sdk = looker_sdk.init40()
         # Override settings if provided (for non-ini-file config)
         self.sdk.auth.settings.base_url = base_url
@@ -57,13 +58,21 @@ class LookerExtractor:
         self._look_cache: dict[int, list[dict]] = {}
 
     @classmethod
-    def from_credentials(cls, base_url: str, client_id: str, client_secret: str):
+    def from_credentials(
+        cls,
+        base_url: str,
+        client_id: str,
+        client_secret: str,
+        timeout: int = 300,
+    ):
         """Create extractor from explicit credentials (for Lambda/Secrets Manager)."""
         import os
         os.environ["LOOKERSDK_BASE_URL"] = base_url
         os.environ["LOOKERSDK_CLIENT_ID"] = client_id
         os.environ["LOOKERSDK_CLIENT_SECRET"] = client_secret
+        os.environ["LOOKERSDK_TIMEOUT"] = str(timeout)
         instance = cls.__new__(cls)
+        instance.timeout = timeout
         instance.sdk = looker_sdk.init40()
         instance._look_cache = {}
         return instance
@@ -79,6 +88,7 @@ class LookerExtractor:
         limit: int = 500,
     ) -> list[dict]:
         """Run an inline query against a Looker Explore and return results as dicts."""
+        opts = {"timeout": self.timeout}
         query = self.sdk.create_query(
             body=models.WriteQuery(
                 model=model,
@@ -87,16 +97,25 @@ class LookerExtractor:
                 filters=filters or {},
                 sorts=sorts or [],
                 limit=str(limit),
-            )
+            ),
+            transport_options=opts,
         )
-        result = self.sdk.run_query(query_id=query.id, result_format="json")
+        result = self.sdk.run_query(
+            query_id=query.id,
+            result_format="json",
+            transport_options=opts,
+        )
         import json
         return json.loads(result) if isinstance(result, str) else result
 
     @retry_on_transient(max_retries=3, backoff_factor=1.0)
     def _run_look(self, look_id: int) -> list[dict]:
         """Run a saved Look and return results as dicts."""
-        result = self.sdk.run_look(look_id=look_id, result_format="json")
+        result = self.sdk.run_look(
+            look_id=look_id,
+            result_format="json",
+            transport_options={"timeout": self.timeout},
+        )
         import json
         return json.loads(result) if isinstance(result, str) else result
 
