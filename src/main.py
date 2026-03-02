@@ -25,12 +25,16 @@ import yaml
 from src.extractors.intercom import IntercomExtractor
 from src.extractors.jira import JiraExtractor
 from src.extractors.looker import LookerExtractor
-from src.extractors.salesforce import SalesforceExtractor
-from src.loaders.salesforce import SalesforceLoader, write_dry_run_csv
 from src.scoring.composite import classify_tier, compute_churn_risk, compute_health_score
 from src.scoring.dimensions import score_dimension
 from src.scoring.qualitative import apply_qualitative_modifier
 
+try:
+    from src.extractors.salesforce import SalesforceExtractor
+except ImportError:
+    SalesforceExtractor = None  # type: ignore[assignment,misc]
+
+from src.loaders.salesforce import SalesforceLoader, write_dry_run_csv
 logger = logging.getLogger("health_score")
 
 # Dimension sections that must appear in both weights.yaml and thresholds.yaml
@@ -295,7 +299,7 @@ class HealthScoreOrchestrator:
         sf_password = os.environ.get("SF_PASSWORD")
         sf_token = os.environ.get("SF_SECURITY_TOKEN")
         sf_domain = os.environ.get("SF_DOMAIN", "login")
-        if sf_username and sf_password and sf_token:
+        if SalesforceExtractor and sf_username and sf_password and sf_token:
             self.sf_extractor = SalesforceExtractor(
                 username=sf_username,
                 password=sf_password,
@@ -327,7 +331,9 @@ class HealthScoreOrchestrator:
             Full scoring result dict.
         """
         sf_id = account["sf_account_id"]
-        intercom_id = account.get("intercom_company_id", "")
+        # intercom_internal_id is the Intercom-assigned ID used for conversation searches;
+        # intercom_company_id is the custom external ID (Brand:<uuid>).
+        intercom_id = account.get("intercom_internal_id", "") or account.get("intercom_company_id", "")
         looker_id = account.get("looker_customer_id", "")
         segment = account.get("segment", "standard").lower()
         account_name = account.get("account_name", sf_id)

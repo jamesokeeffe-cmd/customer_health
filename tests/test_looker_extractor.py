@@ -158,101 +158,53 @@ class TestCalcTrendPct:
 # ---------------------------------------------------------------------------
 
 class TestExtractAdoptionMetrics:
-    def _setup_inline_query(self, extractor, side_effect):
-        """Patch _run_inline_query with a list of side effects."""
-        extractor._run_inline_query = MagicMock(side_effect=side_effect)
-
     def test_happy_path(self, extractor):
-        """All queries succeed with data."""
-        call_count = [0]
-        responses = [
-            # Page visits per arrival: current=6.5, prev_30d=5.0
-            [{"platform_score.total_page_visits_per_arrival": 6.5}],
-            [{"platform_score.total_page_visits_per_arrival": 5.0}],
-            # Feature breadth: 6 active of 10 total
-            [{"feature_usage.active_module_count": 6, "feature_usage.total_module_count": 10}],
-            # Platform score current
-            [{"platform_score.score": 72}],
-            # Platform score 90d ago
-            [{"platform_score.score": 65}],
+        """Page visits per arrival calculated from Look 176 / Look 171."""
+        extractor._look_cache[LOOK_PAGE_VISITS] = [
+            {FIELD_ID_PAGE_VISITS: "cust-1", FIELD_PAGE_VISITS_RAW: 6500},
         ]
-
-        def side_effect(**kwargs):
-            idx = call_count[0]
-            call_count[0] += 1
-            return responses[idx]
-
-        extractor._run_inline_query = MagicMock(side_effect=side_effect)
+        extractor._look_cache[LOOK_BOOKINGS] = [
+            {FIELD_ID_BOOKINGS: "cust-1", FIELD_TOTAL_BOOKINGS: 1000},
+        ]
 
         result = extractor.extract_adoption_metrics("cust-1")
 
         assert result["page_visits_per_arrival"] == 6.5
-        assert result["page_visits_per_arrival_trend"] == 30.0  # (6.5-5.0)/5.0*100
-        assert result["feature_breadth_pct"] == 60.0  # 6/10*100
-        assert result["platform_score"] == 72
-        assert result["platform_score_trend"] == 7.0  # 72-65
-
-    def test_individual_query_failure_returns_none(self, extractor):
-        """When one query fails, its metric is None; others still calculated."""
-        call_count = [0]
-
-        def side_effect(**kwargs):
-            idx = call_count[0]
-            call_count[0] += 1
-            # Fail the feature breadth query (index 2)
-            if idx == 2:
-                raise Exception("Looker API error")
-            # Page visits per arrival
-            if idx < 2:
-                return [{"platform_score.total_page_visits_per_arrival": 4.0}]
-            if idx == 3:
-                return [{"platform_score.score": 50}]
-            if idx == 4:
-                return [{"platform_score.score": 45}]
-            return []
-
-        extractor._run_inline_query = MagicMock(side_effect=side_effect)
-
-        result = extractor.extract_adoption_metrics("cust-1")
-
-        assert result["feature_breadth_pct"] is None
-        assert result["page_visits_per_arrival"] is not None
-
-    def test_empty_results(self, extractor):
-        """Empty query results produce zero/None metrics."""
-        extractor._run_inline_query = MagicMock(return_value=[])
-
-        result = extractor.extract_adoption_metrics("cust-1")
-
-        # Page visits per arrival is 0 from empty results, trend = 0%
-        assert result["page_visits_per_arrival"] == 0
-        assert result["page_visits_per_arrival_trend"] == 0.0
+        # Metrics that require Explores return None
+        assert result["page_visits_per_arrival_trend"] is None
         assert result["feature_breadth_pct"] is None
         assert result["platform_score"] is None
+        assert result["platform_score_trend"] is None
 
-    def test_feature_breadth_zero_total(self, extractor):
-        """Feature breadth with zero total_module_count defaults to 1 to avoid division by zero."""
-        call_count = [0]
-
-        def side_effect(**kwargs):
-            idx = call_count[0]
-            call_count[0] += 1
-            if idx < 2:
-                return [{"platform_score.total_page_visits_per_arrival": 0}]
-            if idx == 2:
-                return [{"feature_usage.active_module_count": 3, "feature_usage.total_module_count": 0}]
-            return []
-
-        extractor._run_inline_query = MagicMock(side_effect=side_effect)
+    def test_customer_not_in_looks(self, extractor):
+        """Customer not found in Look data — page_visits_per_arrival is None."""
+        extractor._look_cache[LOOK_PAGE_VISITS] = [
+            {FIELD_ID_PAGE_VISITS: "other", FIELD_PAGE_VISITS_RAW: 100},
+        ]
+        extractor._look_cache[LOOK_BOOKINGS] = [
+            {FIELD_ID_BOOKINGS: "other", FIELD_TOTAL_BOOKINGS: 50},
+        ]
 
         result = extractor.extract_adoption_metrics("cust-1")
 
-        # total=0 → defaults to 1, so 3/1*100 = 300.0
-        assert result["feature_breadth_pct"] == 300.0
+        assert result["page_visits_per_arrival"] is None
 
-    def test_all_queries_fail(self, extractor):
-        """All queries raise exceptions — all metrics are None."""
-        extractor._run_inline_query = MagicMock(side_effect=Exception("timeout"))
+    def test_zero_bookings(self, extractor):
+        """Zero bookings — cannot compute per-arrival metric."""
+        extractor._look_cache[LOOK_PAGE_VISITS] = [
+            {FIELD_ID_PAGE_VISITS: "cust-1", FIELD_PAGE_VISITS_RAW: 500},
+        ]
+        extractor._look_cache[LOOK_BOOKINGS] = [
+            {FIELD_ID_BOOKINGS: "cust-1", FIELD_TOTAL_BOOKINGS: 0},
+        ]
+
+        result = extractor.extract_adoption_metrics("cust-1")
+
+        assert result["page_visits_per_arrival"] is None
+
+    def test_look_fetch_failure(self, extractor):
+        """Look fetch raises exception — all metrics are None."""
+        extractor._get_look_data = MagicMock(side_effect=Exception("API error"))
 
         result = extractor.extract_adoption_metrics("cust-1")
 

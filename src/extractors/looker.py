@@ -121,7 +121,7 @@ class LookerExtractor:
     def _run_look(self, look_id: int) -> list[dict]:
         """Run a saved Look and return results as dicts."""
         result = self.sdk.run_look(
-            look_id=look_id,
+            look_id=str(look_id),
             result_format="json",
             transport_options={"timeout": self.timeout},
         )
@@ -137,127 +137,46 @@ class LookerExtractor:
     def extract_adoption_metrics(
         self,
         looker_customer_id: str,
-        model_name: str = "alliants",
-        feature_view: str = "feature_usage",
-        customer_field: str = "customer_id",
+        **_kwargs,
     ) -> dict:
         """Extract Adoption & Engagement metrics for one customer.
 
+        Uses saved Looks (via the Look cache) instead of inline queries.
+        page_visits_per_arrival is derived from Look 176 / Look 171.
+        Other metrics (feature_breadth, platform_score, trends) require
+        Looker Explores that are not yet configured — returns None for those.
+
         Returns:
             dict with keys:
-                page_visits_per_arrival (avg page visits per arrival, current 30d)
-                page_visits_per_arrival_trend (% change 30d vs prior 30d)
-                feature_breadth_pct (% of modules active)
-                platform_score (current AXP score)
-                platform_score_trend (change over 90d)
+                page_visits_per_arrival, page_visits_per_arrival_trend,
+                feature_breadth_pct, platform_score, platform_score_trend
         """
-        # Page visits per arrival (current 30d + prior 30d for trend)
-        pvpa = {}
-        for period, date_filter in [
-            ("current", "30 days"),
-            ("prev_30d", "30 days ago for 30 days"),
-        ]:
-            try:
-                rows = self._run_inline_query(
-                    model=model_name,
-                    view="platform_score",
-                    fields=[
-                        "platform_score.customer_id",
-                        "platform_score.total_page_visits_per_arrival",
-                    ],
-                    filters={
-                        "platform_score.customer_id": looker_customer_id,
-                        "platform_score.score_date": date_filter,
-                    },
-                )
-                pvpa[period] = (
-                    rows[0].get("platform_score.total_page_visits_per_arrival", 0)
-                    if rows else 0
-                )
-            except Exception:
-                logger.exception("Failed to fetch page visits per arrival for period %s", period)
-                pvpa[period] = None
-
-        # Feature adoption breadth
-        feature_breadth = None
-        try:
-            rows = self._run_inline_query(
-                model=model_name,
-                view=feature_view,
-                fields=[
-                    f"{feature_view}.{customer_field}",
-                    f"{feature_view}.active_module_count",
-                    f"{feature_view}.total_module_count",
-                ],
-                filters={
-                    f"{feature_view}.{customer_field}": looker_customer_id,
-                    f"{feature_view}.activity_date": "30 days",
-                },
-            )
-            if rows:
-                active = rows[0].get(f"{feature_view}.active_module_count", 0) or 0
-                total = rows[0].get(f"{feature_view}.total_module_count", 1) or 1
-                feature_breadth = round((active / total) * 100, 1)
-        except Exception:
-            logger.exception("Failed to fetch feature breadth")
-
-        # AXP Platform Score (current + 90d ago)
-        platform_current = None
-        platform_90d_ago = None
-        try:
-            rows = self._run_inline_query(
-                model=model_name,
-                view="platform_score",
-                fields=[
-                    "platform_score.customer_id",
-                    "platform_score.score",
-                ],
-                filters={
-                    "platform_score.customer_id": looker_customer_id,
-                    "platform_score.score_date": "1 day",
-                },
-            )
-            if rows:
-                platform_current = rows[0].get("platform_score.score", 0)
-        except Exception:
-            logger.exception("Failed to fetch current platform score")
+        page_visits_per_arrival = None
 
         try:
-            rows = self._run_inline_query(
-                model=model_name,
-                view="platform_score",
-                fields=[
-                    "platform_score.customer_id",
-                    "platform_score.score",
-                ],
-                filters={
-                    "platform_score.customer_id": looker_customer_id,
-                    "platform_score.score_date": "90 days ago for 1 day",
-                },
+            pv_row = self._get_customer_row(
+                LOOK_PAGE_VISITS, looker_customer_id, id_field=FIELD_ID_PAGE_VISITS,
             )
-            if rows:
-                platform_90d_ago = rows[0].get("platform_score.score", 0)
+            bookings_row = self._get_customer_row(
+                LOOK_BOOKINGS, looker_customer_id, id_field=FIELD_ID_BOOKINGS,
+            )
+            raw_visits = pv_row.get(FIELD_PAGE_VISITS_RAW) if pv_row else None
+            total_bookings = (
+                bookings_row.get(FIELD_TOTAL_BOOKINGS)
+                if bookings_row
+                else None
+            )
+            if raw_visits is not None and total_bookings and total_bookings > 0:
+                page_visits_per_arrival = round(raw_visits / total_bookings, 2)
         except Exception:
-            logger.exception("Failed to fetch 90d-ago platform score")
-
-        # Calculate trends
-        pvpa_current = pvpa.get("current")
-        pvpa_trend = None
-        if pvpa_current is not None and pvpa.get("prev_30d") is not None:
-            pvpa_trend = self._calc_trend_pct(
-                pvpa_current, pvpa["prev_30d"]
-            )
-
-        platform_trend = None
-        if platform_current is not None and platform_90d_ago is not None:
-            platform_trend = round(platform_current - platform_90d_ago, 1)
+            logger.exception("Failed to fetch page visits per arrival from Looks")
 
         return {
-            "page_visits_per_arrival": pvpa_current,
-            "page_visits_per_arrival_trend": pvpa_trend,
-            "feature_breadth_pct": feature_breadth,
-            "platform_score": platform_current,
-            "platform_score_trend": platform_trend,
+            "page_visits_per_arrival": page_visits_per_arrival,
+            "page_visits_per_arrival_trend": None,  # needs prior-period Look
+            "feature_breadth_pct": None,             # needs Explore
+            "platform_score": None,                  # needs Explore
+            "platform_score_trend": None,            # needs Explore
         }
 
     # ------------------------------------------------------------------

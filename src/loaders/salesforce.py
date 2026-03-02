@@ -11,7 +11,10 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from simple_salesforce import Salesforce
+try:
+    from simple_salesforce import Salesforce
+except ImportError:
+    Salesforce = None  # type: ignore[assignment,misc]
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +31,12 @@ class SalesforceLoader:
         instance_url: str | None = None,
         access_token: str | None = None,
     ):
+        if Salesforce is None:
+            raise ImportError(
+                "simple_salesforce is required for SalesforceLoader. "
+                "Install it with: pip install simple-salesforce"
+            )
+
         if access_token and instance_url:
             self.sf = Salesforce(
                 instance_url=instance_url,
