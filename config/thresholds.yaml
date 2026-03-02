@@ -293,70 +293,76 @@ relationship_expansion:
 # ---------------------------------------------------------------------------
 platform_value:
   positive_sentiment_pct:
+    # Data: median=41, p25=33, p75=50 (n=50)
     lower_is_better: false
     paid:
-      green: 12
-      yellow: 6
-      red: 2
+      green: 50
+      yellow: 35
+      red: 20
     standard:
-      green: 12
-      yellow: 6
-      red: 2
+      green: 45
+      yellow: 30
+      red: 15
 
   response_before_target_pct:
+    # Data: median=28, p25=0, p75=43 (n=59)
     lower_is_better: false
     paid:
-      green: 75
-      yellow: 50
-      red: 25
+      green: 45
+      yellow: 25
+      red: 10
     standard:
-      green: 75
-      yellow: 50
-      red: 25
+      green: 40
+      yellow: 20
+      red: 8
 
   allin_conversation_pct:
+    # Data: median=29, p25=15, p75=58 (n=20)
     lower_is_better: false
     paid:
-      green: 20
-      yellow: 10
-      red: 3
+      green: 55
+      yellow: 25
+      red: 10
     standard:
-      green: 20
-      yellow: 10
-      red: 3
+      green: 50
+      yellow: 20
+      red: 8
 
   conversations_per_booking_pct:
+    # Data: median=3, p25=0.2, p75=7 (n=56)
     lower_is_better: false
     paid:
-      green: 22
-      yellow: 12
-      red: 5
+      green: 8
+      yellow: 3
+      red: 1
     standard:
-      green: 22
-      yellow: 12
-      red: 5
+      green: 6
+      yellow: 2
+      red: 0.5
 
   arrival_ciol_pct:
+    # Data: 80% are 0, max=28. Feature not broadly adopted
     lower_is_better: false
     paid:
-      green: 15
-      yellow: 8
-      red: 2
+      green: 12
+      yellow: 5
+      red: 1
     standard:
-      green: 15
-      yellow: 8
-      red: 2
+      green: 10
+      yellow: 4
+      red: 0.5
 
   digital_key_pct:
+    # Data: 89% are 0, max=20. Feature not broadly adopted
     lower_is_better: false
     paid:
-      green: 10
-      yellow: 5
-      red: 1
+      green: 8
+      yellow: 3
+      red: 0.5
     standard:
-      green: 10
-      yellow: 5
-      red: 1
+      green: 6
+      yellow: 2
+      red: 0.5
 
   automation_active:
     # Binary: 0 = inactive, 1 = active
@@ -371,6 +377,7 @@ platform_value:
       red: 0
 
   itinerary_booking_pct:
+    # Look 177 temporarily disabled — thresholds unchanged
     lower_is_better: false
     paid:
       green: 5
@@ -382,15 +389,16 @@ platform_value:
       red: 0.5
 
   page_visits_per_arrival:
+    # Data: median=0, p75=0.1, outliers at 2354/326 (likely data issues)
     lower_is_better: false
     paid:
-      green: 85
-      yellow: 50
-      red: 20
+      green: 5
+      yellow: 1
+      red: 0.1
     standard:
-      green: 85
-      yellow: 50
-      red: 20
+      green: 4
+      yellow: 0.5
+      red: 0.1
 
 # ---------------------------------------------------------------------------
 # Qualitative Signal Modifier (caps, not dimension scores)

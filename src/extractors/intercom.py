@@ -27,10 +27,13 @@ from src.extractors.retry import mount_retry_adapter
 logger = logging.getLogger(__name__)
 
 INTERCOM_API_BASE = "https://api.intercom.io"
+CONTACT_BATCH_SIZE = 15  # Max contact IDs per conversation search query
 
 
 class IntercomExtractor:
-    def __init__(self, api_token: str, lookback_days: int = 30):
+    DEFAULT_TIMEOUT = 30  # seconds per HTTP request
+
+    def __init__(self, api_token: str, lookback_days: int = 30, timeout: int | None = None):
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {api_token}",
@@ -39,14 +42,16 @@ class IntercomExtractor:
         })
         mount_retry_adapter(self.session)
         self.lookback_days = lookback_days
+        self.timeout = timeout or self.DEFAULT_TIMEOUT
 
     def _get_paginated(self, url: str, params: dict | None = None) -> list[dict]:
         """Fetch all pages from a cursor-paginated Intercom endpoint."""
         results = []
         params = params or {}
+        base_url = url  # preserve for cursor-based pagination
 
         while True:
-            resp = self.session.get(url, params=params)
+            resp = self.session.get(url, params=params, timeout=self.timeout)
             resp.raise_for_status()
             data = resp.json()
 
@@ -59,8 +64,14 @@ class IntercomExtractor:
             next_page = pages.get("next")
             if next_page:
                 if isinstance(next_page, dict):
-                    url = next_page.get("url", next_page.get("starting_after", ""))
-                    params = {}
+                    next_url = next_page.get("url")
+                    if next_url:
+                        url = next_url
+                        params = {}
+                    else:
+                        # Cursor-based pagination: reuse base URL with starting_after param
+                        url = base_url
+                        params = {"starting_after": next_page["starting_after"]}
                 else:
                     url = next_page
                     params = {}
@@ -76,7 +87,7 @@ class IntercomExtractor:
         companies = []
 
         while True:
-            resp = self.session.get(url, params=params)
+            resp = self.session.get(url, params=params, timeout=self.timeout)
             resp.raise_for_status()
             data = resp.json()
             companies.extend(data.get("data", []))
@@ -91,33 +102,51 @@ class IntercomExtractor:
 
         return companies
 
-    def _get_conversations_for_company(
-        self, company_id: str, since_ts: int, until_ts: int
+    def _get_contacts_for_company(self, company_id: str) -> list[str]:
+        """Fetch all contact IDs for a company (paginated GET)."""
+        url = f"{INTERCOM_API_BASE}/companies/{company_id}/contacts"
+        contacts = self._get_paginated(url)
+        return [c["id"] for c in contacts if "id" in c]
+
+    def _search_conversation_batch(
+        self, contact_ids: list[str], since_ts: int, until_ts: int
     ) -> list[dict]:
-        """Search conversations for a specific company within a date range."""
+        """Search conversations for a batch of contact IDs (paginated)."""
         url = f"{INTERCOM_API_BASE}/conversations/search"
-        conversations = []
+        conversations: list[dict] = []
         next_starting_after = None
 
+        # Build contact filter — single filter or OR group
+        if len(contact_ids) == 1:
+            contact_filter: dict = {
+                "field": "contact_ids",
+                "operator": "~",
+                "value": contact_ids[0],
+            }
+        else:
+            contact_filter = {
+                "operator": "OR",
+                "value": [
+                    {"field": "contact_ids", "operator": "~", "value": cid}
+                    for cid in contact_ids
+                ],
+            }
+
         while True:
-            query = {
+            query: dict = {
                 "query": {
                     "operator": "AND",
                     "value": [
+                        contact_filter,
                         {
-                            "field": "company.id",
-                            "operator": "=",
-                            "value": company_id,
+                            "field": "created_at",
+                            "operator": "<",
+                            "value": until_ts,
                         },
                         {
                             "field": "statistics.last_close_at",
                             "operator": ">",
                             "value": since_ts,
-                        },
-                        {
-                            "field": "created_at",
-                            "operator": "<",
-                            "value": until_ts,
                         },
                     ],
                 },
@@ -125,7 +154,7 @@ class IntercomExtractor:
             if next_starting_after:
                 query["pagination"] = {"starting_after": next_starting_after}
 
-            resp = self.session.post(url, json=query)
+            resp = self.session.post(url, json=query, timeout=self.timeout)
             resp.raise_for_status()
             data = resp.json()
             conversations.extend(data.get("conversations", []))
@@ -138,6 +167,48 @@ class IntercomExtractor:
                 break
 
         return conversations
+
+    def _search_conversations_by_contacts(
+        self, contact_ids: list[str], since_ts: int, until_ts: int
+    ) -> list[dict]:
+        """Search conversations by contact IDs in batches, with deduplication."""
+        seen_ids: set[str] = set()
+        conversations: list[dict] = []
+
+        for i in range(0, len(contact_ids), CONTACT_BATCH_SIZE):
+            batch = contact_ids[i : i + CONTACT_BATCH_SIZE]
+            batch_convos = self._search_conversation_batch(batch, since_ts, until_ts)
+            for conv in batch_convos:
+                conv_id = conv.get("id")
+                if conv_id and conv_id not in seen_ids:
+                    seen_ids.add(conv_id)
+                    conversations.append(conv)
+
+        return conversations
+
+    def _get_conversations_for_company(
+        self, company_id: str, since_ts: int, until_ts: int
+    ) -> list[dict]:
+        """Fetch conversations for a company via contact-based search.
+
+        Two-step approach:
+        1. List all contacts for the company
+        2. Search conversations by contact IDs (in batches of 15)
+        """
+        contact_ids = self._get_contacts_for_company(company_id)
+        if not contact_ids:
+            logger.info("No contacts found for company %s", company_id)
+            return []
+
+        logger.info(
+            "Found %d contacts for company %s, searching conversations in %d batches",
+            len(contact_ids),
+            company_id,
+            (len(contact_ids) + CONTACT_BATCH_SIZE - 1) // CONTACT_BATCH_SIZE,
+        )
+        return self._search_conversations_by_contacts(
+            contact_ids, since_ts, until_ts
+        )
 
     def _extract_conversation_metrics(self, conversation: dict) -> dict:
         """Extract relevant metrics from a single conversation."""

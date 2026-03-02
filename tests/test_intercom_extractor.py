@@ -79,6 +79,20 @@ def _mock_get_response(data: list[dict], next_page: str | dict | None = None) ->
     return resp
 
 
+def _mock_contacts_response(
+    contact_ids: list[str], next_page: str | dict | None = None,
+) -> MagicMock:
+    resp = MagicMock()
+    resp.status_code = 200
+    data = [{"id": cid, "type": "contact"} for cid in contact_ids]
+    pages = {}
+    if next_page:
+        pages["next"] = next_page
+    resp.json.return_value = {"data": data, "pages": pages}
+    resp.raise_for_status = MagicMock()
+    return resp
+
+
 def _mock_companies_response(data: list[dict], next_page: str | None = None) -> MagicMock:
     resp = MagicMock()
     resp.status_code = 200
@@ -196,7 +210,7 @@ class TestExtractSupportMetrics:
     """Tests for extract_support_metrics (aggregated company metrics)."""
 
     def test_no_conversations_returns_zeros(self, extractor):
-        with patch.object(extractor.session, "post", return_value=_mock_search_response([])):
+        with patch.object(extractor, "_get_conversations_for_company", return_value=[]):
             result = extractor.extract_support_metrics("company-123")
 
         assert result["p1_p2_volume"] == 0
@@ -223,7 +237,7 @@ class TestExtractSupportMetrics:
                 count_reopens=0,
             ),
         ]
-        with patch.object(extractor.session, "post", return_value=_mock_search_response(convos)):
+        with patch.object(extractor, "_get_conversations_for_company", return_value=convos):
             result = extractor.extract_support_metrics("company-123")
 
         assert result["p1_p2_volume"] == 1
@@ -243,7 +257,7 @@ class TestExtractSupportMetrics:
             _make_conversation(created_at=1000, first_contact_reply_at=1600),   # 600s
             _make_conversation(created_at=1000, first_contact_reply_at=2200),   # 1200s
         ]
-        with patch.object(extractor.session, "post", return_value=_mock_search_response(convos)):
+        with patch.object(extractor, "_get_conversations_for_company", return_value=convos):
             result = extractor.extract_support_metrics("company-123")
 
         # median of [120, 600, 1200] = 600 / 60 = 10.0
@@ -256,23 +270,22 @@ class TestExtractSupportMetrics:
             _make_conversation(count_reopens=0, created_at=100, first_contact_reply_at=200),
             _make_conversation(count_reopens=3, created_at=100, first_contact_reply_at=200),
         ]
-        with patch.object(extractor.session, "post", return_value=_mock_search_response(convos)):
+        with patch.object(extractor, "_get_conversations_for_company", return_value=convos):
             result = extractor.extract_support_metrics("company-456")
 
         assert result["reopen_rate_pct"] == 50.0
 
     def test_as_of_date_parameter(self, extractor):
-        """as_of_date controls the time window for conversation search."""
+        """as_of_date controls the time window passed to conversation search."""
         fixed_date = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
-        mock_resp = _mock_search_response([])
-        with patch.object(extractor.session, "post", return_value=mock_resp) as mock_post:
+        with patch.object(
+            extractor, "_get_conversations_for_company", return_value=[],
+        ) as mock_get:
             extractor.extract_support_metrics("company-123", as_of_date=fixed_date)
 
-        call_args = mock_post.call_args
-        query = call_args[1]["json"] if "json" in call_args[1] else call_args[0][1]
-        # until_ts should be the as_of_date
-        until_value = query["query"]["value"][2]["value"]
-        assert until_value == int(fixed_date.timestamp())
+        mock_get.assert_called_once()
+        _, since_ts, until_ts = mock_get.call_args[0]
+        assert until_ts == int(fixed_date.timestamp())
 
 
 # ---------------------------------------------------------------------------
@@ -280,32 +293,139 @@ class TestExtractSupportMetrics:
 # ---------------------------------------------------------------------------
 
 class TestGetConversationsForCompany:
-    """Tests for _get_conversations_for_company (pagination via cursor)."""
+    """Tests for _get_conversations_for_company (contact-based two-step search)."""
 
-    def test_single_page(self, extractor):
-        convos = [_make_conversation(), _make_conversation()]
-        with patch.object(extractor.session, "post", return_value=_mock_search_response(convos)):
+    def test_single_batch(self, extractor):
+        """< 15 contacts: one contacts GET + one search POST."""
+        contacts_resp = _mock_contacts_response(["ct1", "ct2", "ct3"])
+        conv1 = _make_conversation()
+        conv1["id"] = "conv-1"
+        conv2 = _make_conversation()
+        conv2["id"] = "conv-2"
+        search_resp = _mock_search_response([conv1, conv2])
+
+        with patch.object(extractor.session, "get", return_value=contacts_resp), \
+             patch.object(extractor.session, "post", return_value=search_resp):
             result = extractor._get_conversations_for_company("c1", 1000, 2000)
 
         assert len(result) == 2
 
-    def test_pagination_with_cursor(self, extractor):
-        page1 = _mock_search_response(
-            [_make_conversation()],
-            next_cursor={"starting_after": "cursor-abc"},
-        )
-        page2 = _mock_search_response([_make_conversation()])
+    def test_empty_contacts_returns_empty(self, extractor):
+        """No contacts for company → no search calls, empty result."""
+        contacts_resp = _mock_contacts_response([])
 
-        with patch.object(extractor.session, "post", side_effect=[page1, page2]):
-            result = extractor._get_conversations_for_company("c1", 1000, 2000)
-
-        assert len(result) == 2
-
-    def test_empty_result(self, extractor):
-        with patch.object(extractor.session, "post", return_value=_mock_search_response([])):
+        with patch.object(extractor.session, "get", return_value=contacts_resp) as mock_get, \
+             patch.object(extractor.session, "post") as mock_post:
             result = extractor._get_conversations_for_company("c1", 1000, 2000)
 
         assert result == []
+        mock_post.assert_not_called()
+
+    def test_contact_pagination(self, extractor):
+        """Contacts are fetched across multiple pages."""
+        page1 = _mock_contacts_response(
+            ["ct1", "ct2"],
+            next_page="https://api.intercom.io/companies/c1/contacts?page=2",
+        )
+        page2 = _mock_contacts_response(["ct3"])
+        conv = _make_conversation()
+        conv["id"] = "conv-1"
+        search_resp = _mock_search_response([conv])
+
+        with patch.object(extractor.session, "get", side_effect=[page1, page2]), \
+             patch.object(extractor.session, "post", return_value=search_resp):
+            result = extractor._get_conversations_for_company("c1", 1000, 2000)
+
+        assert len(result) == 1
+
+    def test_multiple_batches(self, extractor):
+        """> 15 contacts split into multiple search batches."""
+        # 20 contacts → 2 batches (15 + 5)
+        contact_ids = [f"ct{i}" for i in range(20)]
+        contacts_resp = _mock_contacts_response(contact_ids)
+
+        conv1 = _make_conversation()
+        conv1["id"] = "conv-1"
+        conv2 = _make_conversation()
+        conv2["id"] = "conv-2"
+        batch1_resp = _mock_search_response([conv1])
+        batch2_resp = _mock_search_response([conv2])
+
+        with patch.object(extractor.session, "get", return_value=contacts_resp), \
+             patch.object(extractor.session, "post", side_effect=[batch1_resp, batch2_resp]) as mock_post:
+            result = extractor._get_conversations_for_company("c1", 1000, 2000)
+
+        assert len(result) == 2
+        assert mock_post.call_count == 2
+
+    def test_deduplication_across_batches(self, extractor):
+        """Same conversation returned by multiple batches is deduplicated."""
+        contact_ids = [f"ct{i}" for i in range(20)]
+        contacts_resp = _mock_contacts_response(contact_ids)
+
+        shared_conv = _make_conversation()
+        shared_conv["id"] = "conv-shared"
+        unique_conv = _make_conversation()
+        unique_conv["id"] = "conv-unique"
+        batch1_resp = _mock_search_response([shared_conv])
+        batch2_resp = _mock_search_response([shared_conv, unique_conv])
+
+        with patch.object(extractor.session, "get", return_value=contacts_resp), \
+             patch.object(extractor.session, "post", side_effect=[batch1_resp, batch2_resp]):
+            result = extractor._get_conversations_for_company("c1", 1000, 2000)
+
+        assert len(result) == 2
+        result_ids = [c["id"] for c in result]
+        assert "conv-shared" in result_ids
+        assert "conv-unique" in result_ids
+
+    def test_search_pagination_within_batch(self, extractor):
+        """Conversation search results are paginated within a single batch."""
+        contacts_resp = _mock_contacts_response(["ct1"])
+        conv1 = _make_conversation()
+        conv1["id"] = "conv-1"
+        conv2 = _make_conversation()
+        conv2["id"] = "conv-2"
+        search_page1 = _mock_search_response(
+            [conv1], next_cursor={"starting_after": "cursor-abc"},
+        )
+        search_page2 = _mock_search_response([conv2])
+
+        with patch.object(extractor.session, "get", return_value=contacts_resp), \
+             patch.object(extractor.session, "post", side_effect=[search_page1, search_page2]):
+            result = extractor._get_conversations_for_company("c1", 1000, 2000)
+
+        assert len(result) == 2
+
+    def test_single_contact_no_or_wrapper(self, extractor):
+        """Single contact uses direct filter instead of OR group."""
+        contacts_resp = _mock_contacts_response(["ct1"])
+        search_resp = _mock_search_response([])
+
+        with patch.object(extractor.session, "get", return_value=contacts_resp), \
+             patch.object(extractor.session, "post", return_value=search_resp) as mock_post:
+            extractor._get_conversations_for_company("c1", 1000, 2000)
+
+        query = mock_post.call_args[1]["json"]["query"]
+        # First value in AND should be a direct field filter, not an OR group
+        contact_filter = query["value"][0]
+        assert contact_filter["field"] == "contact_ids"
+        assert contact_filter["operator"] == "~"
+        assert contact_filter["value"] == "ct1"
+
+    def test_multiple_contacts_uses_or_wrapper(self, extractor):
+        """Multiple contacts in a batch use OR group."""
+        contacts_resp = _mock_contacts_response(["ct1", "ct2"])
+        search_resp = _mock_search_response([])
+
+        with patch.object(extractor.session, "get", return_value=contacts_resp), \
+             patch.object(extractor.session, "post", return_value=search_resp) as mock_post:
+            extractor._get_conversations_for_company("c1", 1000, 2000)
+
+        query = mock_post.call_args[1]["json"]["query"]
+        contact_filter = query["value"][0]
+        assert contact_filter["operator"] == "OR"
+        assert len(contact_filter["value"]) == 2
 
 
 # ---------------------------------------------------------------------------

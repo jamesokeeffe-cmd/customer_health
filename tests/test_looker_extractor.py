@@ -328,8 +328,8 @@ class TestExtractPlatformValueScore:
         assert result["arrival_ciol_pct"] == 18.0              # 0.18 * 100
         assert result["digital_key_pct"] == 10.0               # (0.06 + 0.04) * 100
         assert result["automation_active"] == 1
-        # itinerary_booking_pct = 12 / 200 * 100 = 6.0
-        assert result["itinerary_booking_pct"] == 6.0
+        # itinerary_booking_pct — temporarily disabled (Look 177 timeout)
+        assert result["itinerary_booking_pct"] is None
         # page_visits_per_arrival = 18000 / 200 = 90.0
         assert result["page_visits_per_arrival"] == 90.0
 
@@ -464,7 +464,8 @@ class TestExtractPlatformValueScore:
         extractor._run_look = MagicMock(return_value=[])
 
         result = extractor.extract_platform_value_score("cust-1")
-        assert result["itinerary_booking_pct"] == 5.0  # 25/500*100
+        # Temporarily disabled (Look 177 timeout) — re-enable with Look 177
+        assert result["itinerary_booking_pct"] is None  # was 5.0
 
     def test_itinerary_zero_bookings_returns_none(self, extractor):
         """Zero total_bookings → itinerary_booking_pct is None (avoid div by zero)."""

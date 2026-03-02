@@ -12,21 +12,24 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Health Score Tiers
+# Health Score Tiers — upper bounds are exclusive except for Champion's 100
 TIERS = [
     ("Champion", 90, 100),
-    ("Healthy", 76, 89),
-    ("At Risk", 60, 75),
-    ("Critical", 0, 59),
+    ("Healthy", 76, 90),
+    ("At Risk", 60, 76),
+    ("Critical", 0, 60),
 ]
 
 
 def classify_tier(score: float) -> str:
     """Map a 0-100 score to a Health Score tier."""
     for tier_name, tier_min, tier_max in TIERS:
-        if tier_min <= score <= tier_max:
+        if tier_min <= score < tier_max:
             return tier_name
-    return "Critical" if score < 0 else "Champion"
+    # Exact 100 → Champion, below 0 → Critical
+    if score >= 100:
+        return "Champion"
+    return "Critical"
 
 
 def compute_churn_risk(

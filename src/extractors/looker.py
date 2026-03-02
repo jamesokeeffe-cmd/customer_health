@@ -304,29 +304,31 @@ class LookerExtractor:
             logger.exception("Failed to fetch automation (Look %s)", LOOK_AUTOMATION)
 
         # --- Look 177 / Look 171: Itinerary booking % ---
-        try:
-            itin_row = self._get_customer_row(
-                LOOK_ITINERARY, looker_customer_id, id_field=FIELD_ID_ITINERARY,
-            )
-            bookings_row_for_itin = self._get_customer_row(
-                LOOK_BOOKINGS, looker_customer_id, id_field=FIELD_ID_BOOKINGS,
-            )
-            itin_visits = (
-                itin_row.get(FIELD_ITINERARY_VISITS) if itin_row else None
-            )
-            total_bookings = (
-                bookings_row_for_itin.get(FIELD_TOTAL_BOOKINGS)
-                if bookings_row_for_itin
-                else None
-            )
-            if itin_visits is not None and total_bookings and total_bookings > 0:
-                metrics["itinerary_booking_pct"] = round(
-                    (itin_visits / total_bookings) * 100, 2
-                )
-        except Exception:
-            logger.exception(
-                "Failed to fetch itinerary (Looks %s/%s)", LOOK_ITINERARY, LOOK_BOOKINGS
-            )
+        # TODO: Re-enable once Look 177 performance is fixed (times out at 300s)
+        # try:
+        #     itin_row = self._get_customer_row(
+        #         LOOK_ITINERARY, looker_customer_id, id_field=FIELD_ID_ITINERARY,
+        #     )
+        #     bookings_row_for_itin = self._get_customer_row(
+        #         LOOK_BOOKINGS, looker_customer_id, id_field=FIELD_ID_BOOKINGS,
+        #     )
+        #     itin_visits = (
+        #         itin_row.get(FIELD_ITINERARY_VISITS) if itin_row else None
+        #     )
+        #     total_bookings = (
+        #         bookings_row_for_itin.get(FIELD_TOTAL_BOOKINGS)
+        #         if bookings_row_for_itin
+        #         else None
+        #     )
+        #     if itin_visits is not None and total_bookings and total_bookings > 0:
+        #         metrics["itinerary_booking_pct"] = round(
+        #             (itin_visits / total_bookings) * 100, 2
+        #         )
+        # except Exception:
+        #     logger.exception(
+        #         "Failed to fetch itinerary (Looks %s/%s)", LOOK_ITINERARY, LOOK_BOOKINGS
+        #     )
+        logger.info("Skipping Look 177 (itinerary) — temporarily disabled due to timeout")
 
         # --- Look 176 / Look 171: Page visits per arrival ---
         try:
