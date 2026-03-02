@@ -8,11 +8,17 @@ Pulls conversation data per company for a 30-day window and calculates:
 - Median close time (hours)
 - Reopen rate (%)
 - Escalation rate (%)
+
+Supports two modes:
+  1. API mode: live Intercom API queries (limited by lack of company filter)
+  2. CSV mode: Intercom conversation export (recommended for production)
 """
 
+import csv
 import logging
 import statistics
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import requests
 
@@ -230,6 +236,201 @@ class IntercomExtractor:
         reopen_rate = (reopen_count / total * 100) if total > 0 else 0
 
         escalation_count = sum(1 for m in metrics if m["is_escalated"])
+        escalation_rate = (escalation_count / total * 100) if total > 0 else 0
+
+        return {
+            "p1_p2_volume": p1_p2_count,
+            "first_response_minutes": round(median_response_minutes, 1),
+            "close_time_hours": round(median_close_hours, 1),
+            "reopen_rate_pct": round(reopen_rate, 1),
+            "escalation_rate_pct": round(escalation_rate, 1),
+        }
+
+    # ------------------------------------------------------------------
+    # CSV-based extraction (Intercom conversation export)
+    # ------------------------------------------------------------------
+
+    _P1_P2_TAGS = {"p1", "p2", "priority", "urgent", "critical"}
+    _ESCALATION_TAGS = {"escalated", "escalation"}
+
+    @staticmethod
+    def _parse_csv_datetime(value: str) -> datetime | None:
+        """Parse a UTC datetime string from an Intercom CSV export."""
+        if not value or not value.strip():
+            return None
+        try:
+            return datetime.strptime(value.strip(), "%Y-%m-%d %H:%M:%S").replace(
+                tzinfo=timezone.utc,
+            )
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _parse_tags(tags_str: str) -> list[str]:
+        """Parse a comma-separated tags string into a list of tag names."""
+        if not tags_str or not tags_str.strip():
+            return []
+        return [t.strip() for t in tags_str.split(",") if t.strip()]
+
+    @staticmethod
+    def _parse_companies(companies_str: str) -> list[str]:
+        """Parse the message_author_companies field into a list of company names."""
+        if not companies_str or not companies_str.strip():
+            return []
+        return [c.strip() for c in companies_str.split(",") if c.strip()]
+
+    @classmethod
+    def load_support_metrics_from_csv(
+        cls,
+        csv_path: str,
+        lookback_days: int = 30,
+        as_of_date: datetime | None = None,
+    ) -> dict[str, dict]:
+        """Load and compute support metrics from an Intercom conversation CSV export.
+
+        Reads the export CSV (one row per message), groups by conversation_id,
+        joins to companies via message_author_companies, filters by date range,
+        and computes the same 5 support metrics as the API-based method.
+
+        Args:
+            csv_path: Path to the Intercom conversation CSV export.
+            lookback_days: Number of days to look back from as_of_date.
+            as_of_date: Reference date (defaults to now UTC).
+
+        Returns:
+            Dict mapping company name (lowercased) → support metrics dict with keys:
+                p1_p2_volume, first_response_minutes, close_time_hours,
+                reopen_rate_pct, escalation_rate_pct
+        """
+        now = as_of_date or datetime.now(timezone.utc)
+        since = now - timedelta(days=lookback_days)
+
+        path = Path(csv_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Intercom CSV export not found: {csv_path}")
+
+        # Pass 1: read CSV and group messages by conversation_id
+        conversations: dict[str, dict] = {}
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            if reader.fieldnames is None:
+                raise ValueError(f"CSV is empty or unreadable: {csv_path}")
+
+            for row in reader:
+                conv_id = row.get("conversation_id", "").strip()
+                if not conv_id:
+                    continue
+
+                if conv_id not in conversations:
+                    conversations[conv_id] = {
+                        "created_at": cls._parse_csv_datetime(
+                            row.get("conversation_created_at", ""),
+                        ),
+                        "first_response_at": cls._parse_csv_datetime(
+                            row.get("conversation_first_response_at", ""),
+                        ),
+                        "closed_at": cls._parse_csv_datetime(
+                            row.get("conversation_closed_at", ""),
+                        ),
+                        "tags": cls._parse_tags(row.get("conversation_tags", "")),
+                        "state": row.get("conversation_state", ""),
+                        "companies": set(),
+                        "has_reopen": False,
+                    }
+
+                # Detect reopens from message_type
+                msg_type = row.get("message_type", "").strip().lower()
+                if msg_type in ("assign_and_reopen", "reopen"):
+                    conversations[conv_id]["has_reopen"] = True
+
+                # Collect companies from customer (non-admin) message authors
+                author_type = row.get("message_author_type", "").strip().lower()
+                if author_type in ("user", "lead", "contact"):
+                    for company in cls._parse_companies(
+                        row.get("message_author_companies", ""),
+                    ):
+                        conversations[conv_id]["companies"].add(company.lower())
+
+        # Pass 2: assign conversations to companies and filter by date range
+        company_conversations: dict[str, list[dict]] = {}
+        for conv_id, conv in conversations.items():
+            created = conv["created_at"]
+            if created is None:
+                continue
+            if created < since or created > now:
+                continue
+
+            for company_name in conv["companies"]:
+                company_conversations.setdefault(company_name, []).append(conv)
+
+        # Pass 3: compute metrics per company
+        result: dict[str, dict] = {}
+        for company_name, convos in company_conversations.items():
+            result[company_name] = cls._compute_csv_support_metrics(convos)
+
+        logger.info(
+            "Loaded Intercom CSV: %d conversations, %d companies, date range %s to %s",
+            len(conversations),
+            len(result),
+            since.strftime("%Y-%m-%d"),
+            now.strftime("%Y-%m-%d"),
+        )
+        return result
+
+    @classmethod
+    def _compute_csv_support_metrics(cls, conversations: list[dict]) -> dict:
+        """Compute support metrics from a list of parsed conversation dicts."""
+        if not conversations:
+            return {
+                "p1_p2_volume": 0,
+                "first_response_minutes": 0,
+                "close_time_hours": 0,
+                "reopen_rate_pct": 0,
+                "escalation_rate_pct": 0,
+            }
+
+        total = len(conversations)
+        p1_p2_count = 0
+        response_times: list[float] = []
+        close_times: list[float] = []
+        reopen_count = 0
+        escalation_count = 0
+
+        for conv in conversations:
+            tags_lower = [t.lower() for t in conv["tags"]]
+
+            # P1/P2 detection
+            if any(t in cls._P1_P2_TAGS for t in tags_lower):
+                p1_p2_count += 1
+
+            # First response time
+            created = conv["created_at"]
+            first_resp = conv["first_response_at"]
+            if created and first_resp and first_resp > created:
+                response_times.append(
+                    (first_resp - created).total_seconds(),
+                )
+
+            # Close time
+            closed = conv["closed_at"]
+            if created and closed and closed > created:
+                close_times.append((closed - created).total_seconds())
+
+            # Reopens
+            if conv["has_reopen"]:
+                reopen_count += 1
+
+            # Escalation
+            if any(t in cls._ESCALATION_TAGS for t in tags_lower):
+                escalation_count += 1
+
+        median_response_minutes = (
+            statistics.median(response_times) / 60 if response_times else 0
+        )
+        median_close_hours = (
+            statistics.median(close_times) / 3600 if close_times else 0
+        )
+        reopen_rate = (reopen_count / total * 100) if total > 0 else 0
         escalation_rate = (escalation_count / total * 100) if total > 0 else 0
 
         return {

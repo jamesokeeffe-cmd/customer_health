@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Tests for HealthScoreOrchestrator (init, score_account, run)."""
 
+import csv
 import logging
 import os
 from unittest.mock import MagicMock, patch
@@ -358,6 +359,69 @@ class TestScoreAccount:
         result = orchestrator.score_account(account)
 
         assert result["segment"] == "standard"
+
+    def test_csv_support_metrics_used(self, orchestrator):
+        """When CSV support metrics are loaded, API is not called."""
+        orchestrator.intercom = MagicMock()
+        orchestrator.looker = None
+        orchestrator.sf_extractor = None
+
+        # Pre-load CSV metrics
+        orchestrator._csv_support_metrics = {
+            "acme corp": {
+                "p1_p2_volume": 2,
+                "first_response_minutes": 15,
+                "close_time_hours": 3,
+                "reopen_rate_pct": 10,
+                "escalation_rate_pct": 5,
+            },
+        }
+
+        account = _make_account(name="Acme Corp")
+        result = orchestrator.score_account(account)
+
+        # API should NOT be called since CSV data is available
+        orchestrator.intercom.extract_support_metrics.assert_not_called()
+        assert result is not None
+
+    def test_csv_support_metrics_miss_falls_through(self, orchestrator):
+        """When CSV is loaded but company not found, result has no support data."""
+        orchestrator.intercom = MagicMock()
+        orchestrator.looker = None
+        orchestrator.sf_extractor = None
+
+        orchestrator._csv_support_metrics = {
+            "other corp": {"p1_p2_volume": 5},
+        }
+
+        account = _make_account(name="Acme Corp")
+        result = orchestrator.score_account(account)
+
+        # API should NOT be called (CSV mode is active, just no match)
+        orchestrator.intercom.extract_support_metrics.assert_not_called()
+        assert result is not None
+
+    def test_load_intercom_csv(self, orchestrator, tmp_path):
+        """load_intercom_csv populates _csv_support_metrics."""
+        csv_file = tmp_path / "intercom.csv"
+        with open(csv_file, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "conversation_id", "conversation_created_at",
+                "conversation_first_response_at", "conversation_closed_at",
+                "conversation_tags", "conversation_state", "message_type",
+                "message_author_type", "message_author_companies",
+            ])
+            writer.writerow([
+                "c1", "2026-02-10 12:00:00", "2026-02-10 12:10:00",
+                "2026-02-10 14:00:00", "", "closed", "comment",
+                "user", "Acme Corp",
+            ])
+
+        orchestrator.load_intercom_csv(str(csv_file))
+
+        assert orchestrator._csv_support_metrics is not None
+        assert "acme corp" in orchestrator._csv_support_metrics
 
 
 # ---------------------------------------------------------------------------

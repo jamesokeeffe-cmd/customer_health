@@ -222,6 +222,9 @@ class HealthScoreOrchestrator:
         self.sf_extractor: SalesforceExtractor | None = None
         self.sf_loader: SalesforceLoader | None = None
 
+        # Pre-loaded CSV support metrics (keyed by lowercase company name)
+        self._csv_support_metrics: dict[str, dict] | None = None
+
     def init_clients(
         self,
         intercom_token: str,
@@ -320,6 +323,20 @@ class HealthScoreOrchestrator:
         else:
             logger.warning("No extractors configured — check environment variables")
 
+    def load_intercom_csv(self, csv_path: str, lookback_days: int = 30) -> None:
+        """Pre-load support metrics from an Intercom conversation CSV export.
+
+        When loaded, CSV metrics are used in score_account() instead of API calls.
+        """
+        self._csv_support_metrics = IntercomExtractor.load_support_metrics_from_csv(
+            csv_path=csv_path,
+            lookback_days=lookback_days,
+        )
+        logger.info(
+            "Loaded Intercom CSV export: %d companies with support data",
+            len(self._csv_support_metrics),
+        )
+
     def score_account(self, account: dict) -> dict:
         """Run the full scoring pipeline for a single account.
 
@@ -341,9 +358,17 @@ class HealthScoreOrchestrator:
         logger.info("Scoring account: %s (%s) [%s]", account_name, sf_id, segment)
 
         # ----- EXTRACT -----
-        # Support Health (Intercom)
+        # Support Health (Intercom — CSV export preferred, API fallback)
         support_raw = {}
-        if self.intercom and intercom_id:
+        if self._csv_support_metrics is not None:
+            # Look up by lowercase account name
+            csv_key = account_name.lower()
+            if csv_key in self._csv_support_metrics:
+                support_raw = self._csv_support_metrics[csv_key]
+                logger.debug("Support metrics from CSV for %s", account_name)
+            else:
+                logger.debug("No CSV support data for %s", account_name)
+        elif self.intercom and intercom_id:
             try:
                 support_raw = self.intercom.extract_support_metrics(intercom_id)
             except Exception:
@@ -645,9 +670,13 @@ def lambda_handler(event, context):
 
     dry_run = event.get("dry_run", False)
     scoring_period = event.get("scoring_period")
+    intercom_csv = event.get("intercom_export_path")
 
     orchestrator = HealthScoreOrchestrator(dry_run=dry_run)
     orchestrator.init_clients_from_env()
+
+    if intercom_csv:
+        orchestrator.load_intercom_csv(intercom_csv)
 
     try:
         summary = orchestrator.run(scoring_period=scoring_period)
@@ -683,6 +712,11 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Output to CSV instead of Salesforce")
     parser.add_argument("--config-dir", default="config", help="Path to config directory")
     parser.add_argument("--period", help="Scoring period (YYYY-MM). Defaults to current month.")
+    parser.add_argument(
+        "--intercom-export",
+        metavar="CSV_PATH",
+        help="Path to Intercom conversation CSV export for support metrics",
+    )
     args = parser.parse_args()
 
     # Ensure output directory exists for log file
@@ -705,6 +739,9 @@ def main():
         dry_run=args.dry_run,
     )
     orchestrator.init_clients_from_env()
+
+    if args.intercom_export:
+        orchestrator.load_intercom_csv(args.intercom_export)
 
     summary = orchestrator.run(scoring_period=args.period)
     print(json.dumps(summary, indent=2))
